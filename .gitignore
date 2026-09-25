@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+notebooks/_local/
+.pytest_cache/
+.ipynb_checkpoints/
+*.local.ipynb
+.DS_Store
+
+# assistant and editor state: local, never published
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.vscode/
+.idea/

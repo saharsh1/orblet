@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orblet"
+dynamic = ["version"]   # read from orblet.__version__, the single source
+description = "Atoms for Keplerian orbit analysis: forward models, likelihoods, design matrices and linear solves, period search, element conversion. Arrays in, results out."
+authors = [{name = "Sahar Shahaf", email = "sahar.shahaf@gmail.com"}]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<3.13"
+keywords = ["astronomy", "binary-stars", "orbits", "astrometry", "radial-velocity", "kepler"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
+
+# The four. Everything in orblet imports at module scope from these and the
+# standard library only; tests/test_orblet_optional_dependencies.py enforces it.
+dependencies = [
+    "numpy>=2,<3",
+    "scipy>=1.14,<2",
+    "astropy>=7,<8",
+    "matplotlib>=3.8,<4",
+]
+
+[project.urls]
+Repository = "https://github.com/saharsh1/orblet"
+Issues = "https://github.com/saharsh1/orblet/issues"
+
+# Optional, each imported inside the one function that needs it, so the
+# package imports and its core paths run without any of them installed.
+[project.optional-dependencies]
+sampling = ["emcee>=3.1,<4"]        # orblet.sampling.run_emcee_chains
+plots = ["corner>=2.2,<3"]          # orblet.plotting.plot_orbit_corner
+tables = ["pandas>=2,<4"]           # orblet.chain_stats.chain_summary_table
+ephemeris = ["jplephem>=2.15"]      # JPL kernels in orblet.parallax (fetch_ephemeris)
+all = [
+    "emcee>=3.1,<4",
+    "corner>=2.2,<3",
+    "pandas>=2,<4",
+    "jplephem>=2.15",
+]
+dev = [
+    "pytest>=7",
+    "build>=1.0",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "orblet.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["orblet*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Opt-in tiers: plain `pytest` runs the fast
+# synthetic suite; `pytest -m slow` and `pytest -m benchmark` are explicit.
+addopts = "-m 'not slow and not benchmark'"
+markers = [
+    "slow: synthetic MCMC and closure tests; opt-in",
+    "coverage: calibration gates over many noise seeds; a subset of slow",
+    "benchmark: synthetic-data closure tests; opt-in",
+]
