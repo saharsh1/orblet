@@ -84,10 +84,52 @@ re-blessed once more when it is declared stable.
   `scalar_distance_matrix`, following `calc_pdc_distance_matrix` in the
   reference implementation (github.com/SPARTA-dev/PDC). No `err` ⇒ numbers
   unchanged.
-- **Faster PDC sweep**: with the observation matrix U-centred,
+- **Faster PDC sweep, step one — batched vectorisation, numbers pinned.**
+  Replace the one-period-at-a-time loop in `compute_pdc_periodogram`
+  (`pdc.py`) with configurable batches: precompute the pairwise `Δt`
+  matrix once, build a `(b, N, N)` block of phase-distance matrices per
+  batch, U-centre it along the matrix axes, and take the inner products
+  without a Python loop over periods. The definitions do not move:
+  unbiased U-centring, the ordinary score, and the semi-partial score
+  with the nuisance projected out of the observation matrix only. For the
+  semi-partial mode, `E = A − (⟨A,Z⟩/⟨Z,Z⟩)Z` and `‖E‖²` are computed once
+  outside the sweep — today `E` is rebuilt per period inside
+  `_semipartial_pdc_score_from_centered`. One centred phase batch serves
+  both scores when a caller wants both curves; how to ask for both is a
+  decision to make (an additive combined mode, or a separate combined
+  entry point) — the return dicts of existing calls do not change.
+  Batch size is configurable with the speed–memory tradeoff documented
+  (each batch holds a few `(b, N, N)` float64 temporaries; keep their
+  number minimal), with a conservative default or a memory-aware choice.
+  Vectorisation and reuse only — no threads, no multiprocessing. Invalid
+  periods, zero norms, degenerate nuisance matrices, NaN scores and
+  best-period selection behave exactly as now.
+  - *Numbers:* the target is byte-identical to the current loop
+    (`test_periodogram_baseline.py` enforces SHA-256). If batched
+    reductions necessarily change summation order, quantify the
+    differences first; no re-bless without an explicit numerical
+    justification.
+  - *Tests:* batched vs a retained scalar reference, in both modes, at
+    batch sizes 1, 8, larger than the period grid, and with a final
+    incomplete batch; randomised inputs at realistic epoch counts;
+    non-contiguous inputs; invalid periods (NaN, 0, negative, inf);
+    zero-norm and degenerate-nuisance cases. Plus a regression test that
+    the combined ordinary-plus-semi-partial computation equals the two
+    separate calls.
+  - *Benchmark:* ~5,000 periods at 597 and at 824 epochs; ordinary only,
+    semi-partial only, and both together; report wall-clock, peak memory,
+    batch size, NumPy version, BLAS config and machine, against the
+    scalar implementation, separating the gain from batching from the
+    gain from reuse between the two score variants. Reported reference
+    timings (~21 vs 46 s at 597 epochs, ~41 vs 93 s at 824) are
+    hypotheses to reproduce, not acceptance criteria.
+  - A further "additional partial" statistic is out of scope until its
+    mathematical definition and intended scientific meaning are supplied.
+- **Faster PDC sweep, step two — the algebraic shortcut**: with the
+  observation matrix U-centred,
   `⟨Ã, B̃⟩ = Σ_{i≠j} Ãᵢⱼ Bᵢⱼ / (n(n−3))`, and `‖B̃‖` follows from row sums, so
   the phase matrix need not be centred per trial period. Changes rounding:
-  own commit, own re-bless.
+  own commit, own re-bless — separate from step one.
 
 ## 6. Correlated noise within a transit, and merging CCDs into transits — PARKED
 
