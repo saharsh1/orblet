@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: >-
+  If you use orblet in your work, please cite it as below, together with
+  the published methods behind the functions you use.
+title: orblet
+abstract: >-
+  Atoms for Keplerian orbit analysis: forward models, likelihoods, design
+  matrices and linear solves, period search, element conversion. Arrays in,
+  results out.
+type: software
+authors:
+  - family-names: Shahaf
+    given-names: Sahar
+version: 0.2.1
+date-released: 2026-09-25
+license: MIT
+repository-code: https://github.com/saharsh1/orblet
+url: https://pypi.org/project/orblet/
+keywords:
+  - astronomy
+  - binary stars
+  - orbits
+  - astrometry
+  - radial velocity
+  - Kepler

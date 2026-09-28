@@ -106,6 +106,13 @@ the parallax signal use the same array and closure is exact. For any other
 truth, construct `OrbitSimulator(...)` directly and pass it as
 `load_simulated_inputs(simulator=..., cadence=..., seed=...)`.
 
+## Citing
+
+If you use orblet, cite it with the metadata in
+[`CITATION.cff`](CITATION.cff); GitHub's "Cite this repository" button
+gives it as APA or BibTeX. Please also cite the published methods behind the
+functions you use.
+
 ## Licence
 
 MIT.
