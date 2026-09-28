@@ -68,6 +68,16 @@ def test_sin_i_zero_is_nan() -> None:
     assert np.isnan(m2[0])
 
 
+def test_nonpositive_m1_and_nan_inputs_are_nan() -> None:
+    nan = np.nan
+    m2 = solve_companion_mass(
+        np.array([5.0, 5.0, nan, 5.0, 5.0]),
+        np.array([0.0, -1.0, 1.0, nan, 1.0]),
+        np.array([1.0, 1.0, 1.0, 1.0, nan]),
+    )
+    assert np.all(np.isnan(m2))
+
+
 def test_broadcasts_scalar_and_array() -> None:
     fm = np.array([1.0, 5.0, 20.0])
     # m1 and sin_i given as scalars -> broadcast against fm.

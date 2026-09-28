@@ -34,15 +34,15 @@ All in `constants.py`.
 
 | symbol | value | line |
 | --- | --- | --- |
-| `DAYS_PER_KEPLER_YEAR` | 365.25 (Julian year) | `constants.py:73` |
-| `G_SI` | 6.674 30 × 10⁻¹¹ (CODATA 2018) | `constants.py:63` |
-| `AU_M` | 1.495 978 707 × 10¹¹ (IAU 2012, exact) | `constants.py:59` |
-| `MSUN_KG` | `GM_SUN_SI / G_SI` (≈1.988 41 × 10³⁰; DERIVED, never an independent literal) | `constants.py:83` |
-| `GM_SUN_SI` | 4π²·AU³/yr² — the unit-system GM, so `fm_spec` and `fm_ast` come out in ONE mass unit | `constants.py:104` |
-| `MJD_J2010_TCB` | 55197.0 | `constants.py:198` |
-| `MJD_J2016_TCB` | 57388.5 (DR3 epoch) | `constants.py:204` |
-| `MJD_J2017_5_TCB` | 57936.375 (**DR4** epoch) | `constants.py:216` |
-| `SOLAR_SYSTEM_EPHEMERIS_PIN` | `"builtin"` (astropy's own; within ~5 km of DE432s) | `constants.py:272` |
+| `DAYS_PER_KEPLER_YEAR` | 365.25 (Julian year) | `constants.py:77` |
+| `G_SI` | 6.674 30 × 10⁻¹¹ (CODATA 2018) | `constants.py:66` |
+| `AU_M` | 1.495 978 707 × 10¹¹ (IAU 2012, exact) | `constants.py:62` |
+| `MSUN_KG` | `GM_SUN_SI / G_SI` (≈1.988 41 × 10³⁰; DERIVED, never an independent literal) | `constants.py:87` |
+| `GM_SUN_SI` | 4π²·AU³/yr² — the unit-system GM, so `fm_spec` and `fm_ast` come out in ONE mass unit | `constants.py:108` |
+| `MJD_J2010_TCB` | 55197.0 | `constants.py:202` |
+| `MJD_J2016_TCB` | 57388.5 (DR3 epoch) | `constants.py:208` |
+| `MJD_J2017_5_TCB` | 57936.375 (**DR4** epoch) | `constants.py:220` |
+| `SOLAR_SYSTEM_EPHEMERIS_PIN` | `"builtin"` (astropy's own; within ~5 km of DE432s) | `constants.py:276` |
 
 **Units, by layer — the most common source of confusion.** The period lives
 in three different units depending on where you look:
@@ -81,7 +81,7 @@ this asymmetry is deliberate — do not "harmonise" it:
 
 - **Astrometric and joint models:** `t_ref` is the catalogue reference
   epoch and is the zero-point of proper motion *and* parallax. It is
-  **REQUIRED** — `require_epoch_ref_mjd` (`constants.py:219`) raises on
+  **REQUIRED** — `require_epoch_ref_mjd` (`constants.py:223`) raises on
   `None`. It tracks the data release: DR3 J2016.0, **DR4 J2017.5 =
   MJD 57936.375**. A wrong epoch here leaves a real scan-modulated
   residual.
@@ -193,7 +193,7 @@ Analytically these are the standard elliptical rectangular coordinates
 
 - **ω is the PRIMARY's** argument of periastron (textbook binary-star), used
   as-is with no ω → ω+π translation (`model.py:517`). Sentinel
-  `OMEGA_CONVENTION_PRIMARY` (`constants.py:163`); the companion's ω is
+  `OMEGA_CONVENTION_PRIMARY` (`constants.py:167`); the companion's ω is
   this plus π.
 - **Ω** is the longitude of the ascending node, counter-clockwise from
   north, as written into the Thiele-Innes constants by `campbell_xy`
@@ -201,7 +201,7 @@ Analytically these are the standard elliptical rectangular coordinates
 - **Inclination spans the full sphere**, `i = arccos(1 − 2u) ∈ [0, π]` with
   `u ∈ [0,1]`, so `cos i` is uniform on `[−1, +1]` — the isotropic prior
   (`CosUniformInclinationPrior`, `priors.py:472`). Sentinel `I_DOMAIN_FULL`
-  (`constants.py:151`).
+  (`constants.py:155`).
 - **`M` is TOTAL mass** (`m₁ + m₂`), never stellar mass, wherever a
   forward model takes one; the default prior dict keeps the short key
   `"M"` (`default_system_priors`, `priors.py:590`).
@@ -351,7 +351,7 @@ model assumption because `K` is being *derived* from masses.)
 Inclination. `K` and `fm_spec` are the observables, and neither is a mass:
 with RV alone `sin i = 1` gives a *minimum* companion mass, and the
 interpretation layer labels it so (`MASS_CONVENTION_PROJECTED`,
-`constants.py:115`).
+`constants.py:119`).
 
 ---
 
@@ -923,7 +923,7 @@ The examples use the **√e–ω disk** for `(e, ω)` (§5.3), which means
 `e ~ Uniform(0, 1)` with no ceiling: an eccentricity ceiling tighter than 1
 needs a different parameterisation, not a tighter prior on the disk. The
 boundary `e = 1` itself is admitted by the disk and rejected only by the
-likelihood (§8, item 2).
+likelihood (§8, item 1).
 
 ### 5.3 Transformations and Jacobians
 
@@ -1008,21 +1008,29 @@ f(m) = (m₂ sin i)³ / (m₁ + m₂)²
 ```
 
 for `m₂` — **not** by a cubic formula but by a vectorised bisection on the
-provably monotone `h(m₂)`: a doubling bracket search (`:288`) then a
+provably monotone `h(m₂)`: a doubling bracket search (`:292`) then a
 **fixed 100 bisections with no tolerance test**. Invalid inputs
-(`fm ≤ 0`, `sin i ≤ 0`, `m₁ ≤ 0`) return `NaN`; the function never raises.
+(`fm ≤ 0`, `sin i ≤ 0`, `m₁ ≤ 0`, or a NaN) return `NaN`; the function
+never raises. The solver does **not** flag `sin i > 1`: it returns the root
+of the formula, which is not a physical mass. The range check is the
+caller's, and the RV adapter below makes it.
 
-`sin i` handling (`_resolve_sin_i`, `:373`):
+`sin i` handling in the RV adapter (`_resolve_sin_i`, `:378`) — the caller
+takes the minimum mass or supplies `sin i`; the layer never draws one:
 
 - **`sin_i = 1.0` (default)** → *minimum* companion mass, sentinel
   `MASS_CONVENTION_PROJECTED`.
-- a `CosUniformInclinationPrior` → isotropic draw `i = arccos(1−2u)`,
-  sentinel `MASS_CONVENTION_TRUE`.
-- ⚠️ a supplied float is **not range-checked** despite an error constant
-  promising it: `sin_i = 0` silently yields all-NaN, `sin_i = 5` is
-  accepted (§8, open item 1).
+- another number in `(0, 1]` → the mass for that `sin i`, sentinel
+  `MASS_CONVENTION_TRUE` (§8, item 2).
+- one value per draw (a 1-D array of the chain's length, or a carrier with
+  `.values` such as `MeasuredSinI`), entries in `[0, 1]` → `sin_i_mode =
+  "per_draw"`; a `0` or `NaN` entry gives a `NaN` mass on that row. An
+  isotropic `sin i` is drawn by the caller (uniform in `cos i`) and passed
+  this way.
+- anything else — a number outside `(0, 1]`, an entry outside `[0, 1]`, a
+  wrong length, a prior spec or a prior object — raises `ValueError`.
 
-`companion_mass_from_rv_posterior` (`:437`) applies the solver per
+`companion_mass_from_rv_posterior` (`:442`) applies the solver per
 posterior draw of an RV fit with an external primary-mass prior;
 `04_interpretation_mass.ipynb` is the worked example.
 
@@ -1057,7 +1065,7 @@ scalar `[m₂_min, m₂_max]` through §6.1.
 ### 6.4 The astrometric companion mass
 
 `companion_mass_from_astrometric_posterior`
-(`interpret/companion_mass.py:594`) turns a TI fit's `fm_ast` draws into a
+(`interpret/companion_mass.py:599`) turns a TI fit's `fm_ast` draws into a
 conditional companion mass with an EXTERNAL primary-mass prior — the
 astrometric twin of §6.1:
 
@@ -1065,7 +1073,7 @@ astrometric twin of §6.1:
   `fm_ast = m₂³/(m₁+m₂)²` is projection-free by construction; passing
   `sin_i = 1` into the shared solver is EXACT (it selects the
   projection-free form), not an edge-on assumption. Sentinel
-  `MASS_CONVENTION_ASTROMETRIC_EXTERNAL_M1` (`constants.py:134`).
+  `MASS_CONVENTION_ASTROMETRIC_EXTERNAL_M1` (`constants.py:138`).
 - **β = 0 conditional.** With companion light,
   `fm_ast = |m₂/M − β/(1+β)|³ · M`; the `beta` keyword is RESERVED and
   raises `NotImplementedError`, so a β = 0 answer can never be returned
@@ -1162,13 +1170,10 @@ Documentation and behaviour gaps found by reading the implementation against
 its docstrings, not yet closed. Everything that was found and has since been
 fixed is out of this list; the code and the tests are the record.
 
-1. **`solve_companion_mass` does not validate `sin_i`** despite an error
-   constant promising it, and its docstring says "~60 iterations" where the
-   loop runs 100.
-2. **The `e` boundary**: the disk priors reject `h²+k² > 1`, so `e = 1`
+1. **The `e` boundary**: the disk priors reject `h²+k² > 1`, so `e = 1`
    exactly is admitted by the prior and caught only by the likelihood.
-3. **`companion_mass_from_rv_posterior` labels any fixed `sin i ≠ 1` as
-   `MASS_CONVENTION_TRUE`** (`companion_mass.py:542`) — so a mass computed
+2. **`companion_mass_from_rv_posterior` labels any fixed `sin i ≠ 1` as
+   `MASS_CONVENTION_TRUE`** (`companion_mass.py:547`) — so a mass computed
    from an *assumed* inclination carries a sentinel that reads as
    "measured"; only `sin i = 1` gets `PROJECTED`. The `sin_i` parameter
    docstring says so and names the result's `sin_i_mode` as the

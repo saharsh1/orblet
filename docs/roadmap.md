@@ -10,28 +10,32 @@ release with a changelog entry (see `CHANGELOG.md` for the rule).
 Arrays stay plain floats inside; the change is at the boundary. Public
 functions accept `Quantity` inputs and convert to the documented unit on
 entry (a float stays a float in the documented unit), and results can be
-requested as `Quantity`. Constants: `G_SI`, `AU_M`, `MSUN_KG` compared
-against `astropy.constants` in a test, with a decision to make first —
-`GM_SUN_SI` is deliberately `4π²·AU³/yr²` so that `fm_spec` and `fm_ast`
-share one mass unit, and that differs from astropy's `GM_sun` at the
-1e-4 level. Keep ours as the authority and test the difference, or switch
-and accept that the two mass functions no longer close exactly.
+requested as `Quantity`.
+
+The constants are compared with astropy in `tests/test_constants.py`:
+`C_KMS`, `AU_M`, `G_SI`, `MSUN_KG`, `DAYS_PER_KEPLER_YEAR` and the MJD
+epoch anchors are bit-identical. Two differ, and the test pins by how much:
+
+- `GM_SUN_SI` is deliberately `4π²·AU³/yr²`, so that `fm_spec` and
+  `fm_ast` share one mass unit; it sits 3.8e-5 above astropy's `GM_sun`.
+  Switching to astropy's value would break the exact closure of the two
+  mass functions.
+- `MSUN_IN_MJUP = 1047.35` is the IAU 2009 Sun/Jupiter ratio; astropy's
+  `M_sun / M_jup` (IAU 2015 nominal) is 1047.5655, 2.1e-4 higher. Moving to
+  it would change every Jupiter-mass output: its own commit, re-blessed.
 
 Steps, in order:
 
-1. The constants test (no number moves): ours against `astropy.constants`,
-   with the `GM_SUN_SI` difference pinned rather than hidden.
-2. One entry helper, `Quantity` → float in the documented unit, a float
+1. One entry helper, `Quantity` → float in the documented unit, a float
    passed through untouched. It must recognise a `Quantity` without
    importing astropy at module scope (duck-typed on `.unit`), or the
    lazy-import test fails. Rolled out function by function across the
    public surface, each with a test that a float and the equivalent
    `Quantity` give identical bytes.
-3. `Quantity` outputs on request — a public-surface change: minor release,
+2. `Quantity` outputs on request — a public-surface change: minor release,
    consumer pin checked.
 
-Rough size: half a day for step 1 and the helper, one to two days for the
-roll-out.
+Rough size: a few hours for the helper, one to two days for the roll-out.
 
 ## 2. A JAX sibling, `orblet_jax` — alongside, not instead
 
@@ -246,11 +250,7 @@ attitude and geometry, so a diagonal covariance makes formal errors and
 - An astrometric all-parameter example (the fourteen-parameter twin of
   `fit_rv_orbit_all_parameters.ipynb`); §3.9 of the reference manual
   points at the RV one until it exists. Rough size: a day.
-- Jitter sampled at rung 3 of `fit_joint_orbit.ipynb` (both channels).
-  Rough size: a few hours.
-- The three open items of the reference manual (§8), in increasing size:
-  - `solve_companion_mass`: validate `sin_i` as its error constant
-    promises, and make the docstring's iteration count match the loop.
+- The two open items of the reference manual (§8), in increasing size:
   - The `e` boundary: decide whether the disk priors reject `e = 1`
     exactly (today only the likelihood does).
   - A fixed `sin i ≠ 1` labelled `MASS_CONVENTION_TRUE`: a third sentinel

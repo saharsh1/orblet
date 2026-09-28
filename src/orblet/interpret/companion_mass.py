@@ -237,7 +237,8 @@ def solve_companion_mass(
     MONOTONE INCREASING in ``m2`` on ``m2 > 0`` whenever ``fm > 0``,
     ``m1 > 0`` and ``sin_i ∈ (0, 1]``, so the positive root is unique.
     A vectorised bisection on this proven-monotone function finds it
-    (numpy-only; no scipy).  The upper bracket is grown by doubling from
+    (numpy-only; no scipy): a fixed 100 halvings of the bracket, with no
+    tolerance test.  The upper bracket is grown by doubling from
     a generous seed until ``h(upper) ≥ fm`` (capped to avoid a runaway
     loop), so black-hole-mass companions with ``m2 ≫ m1`` are bracketed:
     as ``m2 → ∞``, ``h ≈ sin_i^3 · m2``, hence the root scales like
@@ -263,8 +264,11 @@ def solve_companion_mass(
     numpy.ndarray
         Companion mass ``m2`` (M_sun), same broadcast shape as the
         inputs.  Elements with no physical positive root
-        (``fm ≤ 0`` or ``sin_i = 0``) are returned as ``numpy.nan``.
-        Never raises on unphysical input.
+        (``fm ≤ 0``, ``m1 ≤ 0`` or ``sin_i ≤ 0``, or a NaN in any input)
+        are returned as ``numpy.nan``.  Never raises on unphysical input.
+        ``sin_i > 1`` is NOT flagged: the root of the formula is returned
+        for it, and it is not a physical mass.  The range check belongs to
+        the caller; :func:`companion_mass_from_rv_posterior` raises on it.
     """
     fm_a, m1_a, sin_a = np.broadcast_arrays(
         np.asarray(fm, dtype=float),
@@ -299,8 +303,9 @@ def solve_companion_mass(
             break
         hi = np.where(need, hi * 2.0, hi)
 
-    # Vectorised bisection.  ~60 iterations drives the bracket below
-    # machine precision relative to the root for all realistic masses.
+    # Vectorised bisection, a fixed 100 halvings.  About 60 already take
+    # the bracket below machine precision relative to the root for all
+    # realistic masses; the rest is margin.
     for _ in range(100):
         mid = 0.5 * (lo + hi)
         too_small = h(mid) < fm_v

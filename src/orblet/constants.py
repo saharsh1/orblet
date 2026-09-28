@@ -6,16 +6,19 @@ instance, is DERIVED from the IAU 2015 nominal ``GM_sun`` rather than pinned
 as a literal, because a literal and a comment saying where it came from had
 already disagreed by 2.6e-4 once.
 
-Migrating these to ``astropy.constants`` is on the roadmap (item 1);
-it is a behaviour-visible change (the values move by ulps) and wants its own
-baseline.
+Each value is checked against ``astropy.constants`` / ``astropy.units`` /
+``astropy.time`` in ``tests/test_constants.py``. ``C_KMS``, ``AU_M``,
+``G_SI``, ``MSUN_KG``, ``DAYS_PER_KEPLER_YEAR`` and the MJD epoch anchors
+are bit-identical to astropy's. Two differ on purpose, and the size of each
+difference is pinned: ``GM_SUN_SI`` (the unit-system mass, 3.8e-5 above the
+IAU nominal ``GM_sun``) and ``MSUN_IN_MJUP`` (the IAU 2009 ratio, 2.1e-4
+below the IAU 2015 nominal one).
 
 All values are plain Python floats and strings, used directly by this
 package's numpy code; none is interpolated into another language or file
 format, so ordinary float64 representation is all that matters. Where a
 value is DERIVED from another (``MSUN_KG`` from the nominal GM), it is
-computed here rather than typed, so the two cannot drift apart. The
-astropy migration above would move values by ulps only.
+computed here rather than typed, so the two cannot drift apart.
 
 Time-anchor constants:
 
@@ -62,9 +65,10 @@ AU_M = 1.495978707e11
 # Python-only.
 G_SI = 6.67430e-11
 
-# Solar mass in Jupiter masses (IAU 2015 nominal).
-# A nominal value, typed exactly as published so it stays comparable
-# with other codes that use the same nominal.
+# Solar mass in Jupiter masses: the IAU 2009 Sun/Jupiter mass ratio
+# (1047.348644) to two decimals.  It is NOT the IAU 2015 nominal ratio
+# GM_sun / GM_jup = 1047.5655 (astropy's ``M_sun / M_jup``), which is
+# 2.1e-4 higher; ``tests/test_constants.py`` pins the difference.
 MSUN_IN_MJUP = 1047.35
 
 # Days per Keplerian year: the Julian year.  Periods enter the forward
@@ -95,8 +99,8 @@ MSUN_KG = 1.3271244e20 / G_SI
 # 4π²AU³/yr² — and it is the unit the astrometric mass function
 # ``fm_ast = a_phot³ / P²`` is already expressed in.  The spectroscopic
 # ``fm_from_K`` MUST use the same unit, or the two mass functions — and so
-# the deficit D, which compares them — carry a 2.19e-4 systematic.  That
-# was exactly finding M-1.
+# the deficit D, which compares them — carry a systematic (3.8e-5 against
+# the IAU nominal GM: the residual below).
 #
 # It sits 3.8e-5 from the IAU nominal GM_sun.  That residual is a property
 # of defining a mass unit through the AU and the Julian year, not an
@@ -211,8 +215,8 @@ MJD_J2016_TCB = 57388.5
 # ``astropy.Time('2017.5', format='jyear').mjd`` gives 57936.375, and
 # 57936.375 - 55197.0 = 2739.375 d = 7.5 x 365.25 exactly.  Using DR3's epoch on
 # DR4 data leaves a spurious scan-modulated residual of |pm| x 1.5 yr (7.5 mas for
-# a 5 mas/yr star, against ~0.1 mas errors), so this value is pinned by
-# ``tests/test_epoch_astrometry_percc.py``.
+# a 5 mas/yr star, against ~0.1 mas errors), so this value is pinned against
+# astropy by ``tests/test_constants.py``.
 MJD_J2017_5_TCB = 57936.375
 
 
