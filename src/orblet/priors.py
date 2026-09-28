@@ -396,8 +396,10 @@ class UniformCircularPrior:
     :func:`angle_from_xy`
     (or :func:`...tau_from_xy` for τ).
 
-    The pdf is ``1/π`` on the unit disk and zero outside; ``logpdf``
-    returns ``-log(π)`` inside, ``-inf`` outside.
+    The pdf is ``1/π`` on the CLOSED unit disk and zero outside;
+    ``logpdf`` returns ``-log(π)`` inside and on the unit circle, ``-inf``
+    outside.  The radius carries no physical meaning here, so a point on
+    the circle (``(cos φ, sin φ)``, say) is a valid phase.
     """
 
     def logpdf(self, x: float, y: float) -> float:
@@ -440,12 +442,13 @@ class EccOmegaDiskPrior:
     through the ``e = h² + k²`` decode downstream, never as an extra
     density factor here.
 
-    Because the uniform-on-the-disk density in ``(h, k)`` is the SAME as
-    :class:`UniformCircularPrior` (``1/π`` on the unit disk, zero
-    outside), the ``logpdf`` is IDENTICAL: ``-log(π)`` inside the unit
-    disk, ``-inf`` on/outside it.  The eccentricity-prior Jacobian is
-    absorbed by this uniform-disk density together with the downstream
-    ``e = h² + k²`` decode; no separate Jacobian term is added.
+    The uniform-on-the-disk density in ``(h, k)`` is the SAME as
+    :class:`UniformCircularPrior`'s: ``-log(π)`` inside the unit disk,
+    ``-inf`` outside.  The two differ only ON the unit circle, which this
+    prior rejects (there ``e = 1``) and the phase disk admits.  The
+    eccentricity-prior Jacobian is absorbed by this uniform-disk density
+    together with the downstream ``e = h² + k²`` decode; no separate
+    Jacobian term is added.
 
     The hard support ``h² + k² < 1`` enforces ``e < 1`` automatically
     (the open unit disk), so the eccentricity bound is carried by the
@@ -454,9 +457,10 @@ class EccOmegaDiskPrior:
 
     def logpdf(self, x: float, y: float) -> float:
         # Uniform on the open unit disk: -log(π) inside, -inf on/outside.
-        # IDENTICAL to UniformCircularPrior (the √e enters only via the
-        # downstream e = x² + y² decode, not the density).
-        if x * x + y * y > 1.0:
+        # UniformCircularPrior's density except on the circle, which is
+        # e = 1 here (the √e enters only via the downstream e = x² + y²
+        # decode, not the density).
+        if x * x + y * y >= 1.0:
             return -np.inf
         return -math.log(math.pi)
 

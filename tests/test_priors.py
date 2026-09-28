@@ -6,9 +6,13 @@ Pure Python tests.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from orblet.priors import (
+    EccOmegaDiskPrior,
+    UniformCircularPrior,
     default_companion_priors,
     default_system_priors,
 )
@@ -64,3 +68,27 @@ class TestDefaultSystemPriors:
         _, mu, sigma, lower = priors["M"]
         assert mu == 1.5
         assert sigma == 0.3
+
+
+# ── The unit-disk priors: the (e, ω) disk is open, the phase disk closed ────
+
+_INSIDE = -math.log(math.pi)
+
+
+def test_ecc_omega_disk_is_open():
+    """The unit circle is e = 1 exactly: the prior rejects it itself."""
+    prior = EccOmegaDiskPrior()
+    assert prior.logpdf(0.0, 0.0) == _INSIDE
+    assert prior.logpdf(math.nextafter(1.0, 0.0), 0.0) == _INSIDE
+    assert prior.logpdf(1.0, 0.0) == -math.inf
+    assert prior.logpdf(0.0, -1.0) == -math.inf
+    assert prior.logpdf(0.6, 0.8) == -math.inf       # 0.36 + 0.64 == 1.0
+    assert prior.logpdf(1.0, 1e-6) == -math.inf
+
+
+def test_phase_disk_is_closed():
+    """A phase built as (cos φ, sin φ) sits on the circle and is valid."""
+    prior = UniformCircularPrior()
+    assert prior.logpdf(1.0, 0.0) == _INSIDE
+    assert prior.logpdf(0.6, 0.8) == _INSIDE
+    assert prior.logpdf(1.0, 1e-6) == -math.inf

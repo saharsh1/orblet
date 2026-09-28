@@ -78,6 +78,15 @@ def test_nonpositive_m1_and_nan_inputs_are_nan() -> None:
     assert np.all(np.isnan(m2))
 
 
+def test_sin_i_above_one_is_nan() -> None:
+    # sin_i = 1 is a valid edge; anything above it is not a sine.
+    m2 = solve_companion_mass(
+        np.array([5.0, 5.0, 5.0]), 1.0, np.array([1.0, np.nextafter(1.0, 2.0), 1.5])
+    )
+    assert np.isfinite(m2[0])
+    assert np.all(np.isnan(m2[1:]))
+
+
 def test_broadcasts_scalar_and_array() -> None:
     fm = np.array([1.0, 5.0, 20.0])
     # m1 and sin_i given as scalars -> broadcast against fm.

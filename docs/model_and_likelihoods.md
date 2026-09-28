@@ -53,7 +53,7 @@ in three different units depending on where you look:
 | **RV** design matrix (`period_yr`) | Keplerian **years** | `rv_design_matrix`, `design/columns.py:158` |
 | `best_linear_params_rv` | **days** | `solve/rv.py:493` |
 | **TI** design matrix, `best_linear_params_ti`, `scan_ti_frequency` | `f_per_day` = cycles per **DAY** | `solve/astrometry.py:753`, `search.py:425` |
-| the default period prior | **days** | `default_companion_priors`, `priors.py:537` |
+| the default period prior | **days** | `default_companion_priors`, `priors.py:541` |
 | the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:219`; `compose_rv_seed`, `solve/rv.py:647` |
 
 ⚠️ **A silent factor-365.25 trap lives in this table.** The RV design matrix
@@ -200,11 +200,11 @@ Analytically these are the standard elliptical rectangular coordinates
   (`model.py:474`).
 - **Inclination spans the full sphere**, `i = arccos(1 − 2u) ∈ [0, π]` with
   `u ∈ [0,1]`, so `cos i` is uniform on `[−1, +1]` — the isotropic prior
-  (`CosUniformInclinationPrior`, `priors.py:472`). Sentinel `I_DOMAIN_FULL`
+  (`CosUniformInclinationPrior`, `priors.py:476`). Sentinel `I_DOMAIN_FULL`
   (`constants.py:155`).
 - **`M` is TOTAL mass** (`m₁ + m₂`), never stellar mass, wherever a
   forward model takes one; the default prior dict keeps the short key
-  `"M"` (`default_system_priors`, `priors.py:590`).
+  `"M"` (`default_system_priors`, `priors.py:594`).
 
 ---
 
@@ -901,14 +901,14 @@ unit-agnostic: evaluate a period prior in the unit you sample in (§1.1).
 ### 5.2 Defaults, and the two footguns
 
 Two helpers return prior specifications in the tuple dialect
-`("LogUniform", lo, hi)` that `parse_prior_spec` (`priors.py:656`) turns
+`("LogUniform", lo, hi)` that `parse_prior_spec` (`priors.py:660`) turns
 into the objects above:
 
-- `default_companion_priors(period_days)` (`priors.py:537`):
+- `default_companion_priors(period_days)` (`priors.py:541`):
   `P ~ LogUniform(P₀/3, 3P₀)` **days**, `e ~ Uniform(0, 0.99)`,
   `ω ~ UniformCircular`, `τ ~ Uniform(0, 1)`,
   `mass ~ LogUniform(1e-4, 5)` M☉.
-- `default_system_priors()` (`priors.py:590`):
+- `default_system_priors()` (`priors.py:594`):
   `M ~ truncated_Normal(1.0, 0.2, lo = 0.1)` M☉ — TOTAL mass.
 
 Both are defaults for a solar-type primary with an ordinary companion, and
@@ -922,8 +922,8 @@ each carries a footgun for compact-object work:
 The examples use the **√e–ω disk** for `(e, ω)` (§5.3), which means
 `e ~ Uniform(0, 1)` with no ceiling: an eccentricity ceiling tighter than 1
 needs a different parameterisation, not a tighter prior on the disk. The
-boundary `e = 1` itself is admitted by the disk and rejected only by the
-likelihood (§8, item 1).
+disk is open: `h² + k² ≥ 1` is rejected by the prior itself, so `e = 1`
+never reaches the likelihood.
 
 ### 5.3 Transformations and Jacobians
 
@@ -935,9 +935,9 @@ these are the ones the examples use:
 | --- | --- | --- |
 | `p = ln P` | `P = eᵖ` | `+ p` |
 | `f = 1/P` | `P = 1/f`, `f ≤ 0 → −inf` | `− 2 ln f` |
-| `(h, k)` on the unit disk, `EccOmegaDiskPrior` (`priors.py:416`) | `e = h² + k²`, `ω = atan2(k, h)` | none — uniform on the disk IS `e ~ U(0,1) × ω ~ U(0, 2π)` |
+| `(h, k)` on the unit disk, `EccOmegaDiskPrior` (`priors.py:418`) | `e = h² + k²`, `ω = atan2(k, h)` | none — uniform on the disk IS `e ~ U(0,1) × ω ~ U(0, 2π)` |
 | `(x, y)` on the unit disk, `UniformCircularPrior` (`priors.py:391`) | `ω` or `τ` from the angle; the radius is unidentifiable | none |
-| `u ∈ [0, 1]`, `CosUniformInclinationPrior` (`priors.py:472`) | `i = arccos(1 − 2u)`, full sphere | none — `cos i` uniform IS isotropic |
+| `u ∈ [0, 1]`, `CosUniformInclinationPrior` (`priors.py:476`) | `i = arccos(1 − 2u)`, full sphere | none — `cos i` uniform IS isotropic |
 | `ln s` (jitter) | `s = e^{ln s}` | `+ ln s` |
 
 `UniformInFrequencyPeriodPrior` (`priors.py:297`) already carries the
@@ -1008,20 +1008,19 @@ f(m) = (m₂ sin i)³ / (m₁ + m₂)²
 ```
 
 for `m₂` — **not** by a cubic formula but by a vectorised bisection on the
-provably monotone `h(m₂)`: a doubling bracket search (`:292`) then a
+provably monotone `h(m₂)`: a doubling bracket search (`:290`) then a
 **fixed 100 bisections with no tolerance test**. Invalid inputs
-(`fm ≤ 0`, `sin i ≤ 0`, `m₁ ≤ 0`, or a NaN) return `NaN`; the function
-never raises. The solver does **not** flag `sin i > 1`: it returns the root
-of the formula, which is not a physical mass. The range check is the
-caller's, and the RV adapter below makes it.
+(`fm ≤ 0`, `m₁ ≤ 0`, `sin i` outside `(0, 1]`, or a NaN) return `NaN`;
+the function never raises. The RV adapter below is stricter and raises on
+an out-of-range `sin i`.
 
-`sin i` handling in the RV adapter (`_resolve_sin_i`, `:378`) — the caller
+`sin i` handling in the RV adapter (`_resolve_sin_i`, `:376`) — the caller
 takes the minimum mass or supplies `sin i`; the layer never draws one:
 
 - **`sin_i = 1.0` (default)** → *minimum* companion mass, sentinel
   `MASS_CONVENTION_PROJECTED`.
 - another number in `(0, 1]` → the mass for that `sin i`, sentinel
-  `MASS_CONVENTION_TRUE` (§8, item 2).
+  `MASS_CONVENTION_TRUE` (§8, item 1).
 - one value per draw (a 1-D array of the chain's length, or a carrier with
   `.values` such as `MeasuredSinI`), entries in `[0, 1]` → `sin_i_mode =
   "per_draw"`; a `0` or `NaN` entry gives a `NaN` mass on that row. An
@@ -1030,7 +1029,7 @@ takes the minimum mass or supplies `sin i`; the layer never draws one:
 - anything else — a number outside `(0, 1]`, an entry outside `[0, 1]`, a
   wrong length, a prior spec or a prior object — raises `ValueError`.
 
-`companion_mass_from_rv_posterior` (`:442`) applies the solver per
+`companion_mass_from_rv_posterior` (`:440`) applies the solver per
 posterior draw of an RV fit with an external primary-mass prior;
 `04_interpretation_mass.ipynb` is the worked example.
 
@@ -1065,7 +1064,7 @@ scalar `[m₂_min, m₂_max]` through §6.1.
 ### 6.4 The astrometric companion mass
 
 `companion_mass_from_astrometric_posterior`
-(`interpret/companion_mass.py:599`) turns a TI fit's `fm_ast` draws into a
+(`interpret/companion_mass.py:597`) turns a TI fit's `fm_ast` draws into a
 conditional companion mass with an EXTERNAL primary-mass prior — the
 astrometric twin of §6.1:
 
@@ -1170,10 +1169,8 @@ Documentation and behaviour gaps found by reading the implementation against
 its docstrings, not yet closed. Everything that was found and has since been
 fixed is out of this list; the code and the tests are the record.
 
-1. **The `e` boundary**: the disk priors reject `h²+k² > 1`, so `e = 1`
-   exactly is admitted by the prior and caught only by the likelihood.
-2. **`companion_mass_from_rv_posterior` labels any fixed `sin i ≠ 1` as
-   `MASS_CONVENTION_TRUE`** (`companion_mass.py:547`) — so a mass computed
+1. **`companion_mass_from_rv_posterior` labels any fixed `sin i ≠ 1` as
+   `MASS_CONVENTION_TRUE`** (`companion_mass.py:545`) — so a mass computed
    from an *assumed* inclination carries a sentinel that reads as
    "measured"; only `sin i = 1` gets `PROJECTED`. The `sin_i` parameter
    docstring says so and names the result's `sin_i_mode` as the

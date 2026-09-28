@@ -250,12 +250,10 @@ attitude and geometry, so a diagonal covariance makes formal errors and
 - An astrometric all-parameter example (the fourteen-parameter twin of
   `fit_rv_orbit_all_parameters.ipynb`); §3.9 of the reference manual
   points at the RV one until it exists. Rough size: a day.
-- The two open items of the reference manual (§8), in increasing size:
-  - The `e` boundary: decide whether the disk priors reject `e = 1`
-    exactly (today only the likelihood does).
-  - A fixed `sin i ≠ 1` labelled `MASS_CONVENTION_TRUE`: a third sentinel
-    for an assumed inclination is a convention-surface change — minor
-    release, consumer pin checked.
+- The open item of the reference manual (§8): a fixed `sin i ≠ 1`
+  labelled `MASS_CONVENTION_TRUE`. A third sentinel for an assumed
+  inclination is a convention-surface change — minor release, consumer pin
+  checked.
 
 ## 8. Smaller
 

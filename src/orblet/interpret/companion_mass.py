@@ -264,11 +264,9 @@ def solve_companion_mass(
     numpy.ndarray
         Companion mass ``m2`` (M_sun), same broadcast shape as the
         inputs.  Elements with no physical positive root
-        (``fm ≤ 0``, ``m1 ≤ 0`` or ``sin_i ≤ 0``, or a NaN in any input)
-        are returned as ``numpy.nan``.  Never raises on unphysical input.
-        ``sin_i > 1`` is NOT flagged: the root of the formula is returned
-        for it, and it is not a physical mass.  The range check belongs to
-        the caller; :func:`companion_mass_from_rv_posterior` raises on it.
+        (``fm ≤ 0``, ``m1 ≤ 0``, ``sin_i`` outside ``(0, 1]``, or a NaN
+        in any input) are returned as ``numpy.nan``.  Never raises on
+        unphysical input.
     """
     fm_a, m1_a, sin_a = np.broadcast_arrays(
         np.asarray(fm, dtype=float),
@@ -277,8 +275,8 @@ def solve_companion_mass(
     )
     out = np.full(fm_a.shape, np.nan, dtype=float)
 
-    # A positive root exists only for fm > 0 and sin_i > 0 (and m1 > 0).
-    valid = (fm_a > 0.0) & (sin_a > 0.0) & (m1_a > 0.0)
+    # A physical root exists only for fm > 0, m1 > 0 and sin_i in (0, 1].
+    valid = (fm_a > 0.0) & (sin_a > 0.0) & (sin_a <= 1.0) & (m1_a > 0.0)
     if not np.any(valid):
         return out
 
