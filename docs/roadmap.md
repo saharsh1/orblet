@@ -21,8 +21,9 @@ epoch anchors are bit-identical. Two differ, and the test pins by how much:
   Switching to astropy's value would break the exact closure of the two
   mass functions.
 - `MSUN_IN_MJUP = 1047.35` is the IAU 2009 Sun/Jupiter ratio; astropy's
-  `M_sun / M_jup` (IAU 2015 nominal) is 1047.5655, 2.1e-4 higher. Moving to
-  it would change every Jupiter-mass output: its own commit, re-blessed.
+  `M_sun / M_jup` (IAU 2015 nominal) is 1047.5655, 2.1e-4 higher. No result
+  depends on it: its one use (`elements.py`) multiplies a solar mass by it
+  and divides by it again. Kept as is.
 
 Steps, in order:
 
