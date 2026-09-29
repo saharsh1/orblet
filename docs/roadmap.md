@@ -155,43 +155,34 @@ re-blessed once more when it is declared stable.
   `scalar_distance_matrix`, following `calc_pdc_distance_matrix` in the
   reference implementation (github.com/SPARTA-dev/PDC). No `err` ⇒ numbers
   unchanged. A new keyword: minor release. Rough size: a day.
-- **Faster PDC sweep — what was measured.** A spike (Apple M4, NumPy
-  2.5.3, synthetic data at 40, 597 and 824 epochs, both modes) tested the
-  proposed batched vectorisation, a `(b, N, N)` block of phase matrices
-  per batch:
-  - *It is byte-identical* to the current loop (reductions with `np.sum`
-    over axes, not `einsum`/BLAS) at batch sizes 1, 8, 32 and beyond the
-    grid, invalid periods included.
-  - *It is not faster.* One period costs 4–7 ms of passes over N×N
-    arrays; the Python loop overhead is microseconds. Batch 32 is no
-    faster, one batch over the whole grid about 2× slower (cache).
-    Batching and the `batch_size` knob are dropped.
-  - *Where a period's time goes* (N = 824): `np.mod(Δt, P)` 3.45 ms,
-    U-centring 1.16 ms, the rest ~0.4 ms each. An `fmod` path with the
-    same bytes saves only ~7%.
-  - Timings drift ~1.5× between runs: benchmarks need repeats, interleaved.
-- **Faster PDC sweep, step one — a lean loop, numbers pinned.** Keep one
-  period at a time, but: `Δt` built once; preallocated N×N buffers
-  reused; the centring done in place (same operations in the same order);
-  for the semi-partial mode `E = A − (⟨A,Z⟩/⟨Z,Z⟩)Z` and `‖E‖²` computed
-  once outside the sweep (today `E` is rebuilt per period inside
-  `_semipartial_pdc_score_from_centered`). The spike measured 1.4×
-  (ordinary) and 1.6× (semi-partial), byte-identical. No new keyword,
-  so no public-surface change: a patch release. The definitions do not
-  move; invalid periods, zero norms, degenerate nuisance matrices, NaN
-  scores and best-period selection (including `nanargmax` raising on an
-  all-NaN curve) behave exactly as now. No threads, no multiprocessing.
-  - *Tests:* a verbatim copy of the current loop kept as the scalar
-    reference, compared byte for byte: both modes; N = 40, 200, 597;
-    invalid periods (NaN, 0, negative, inf); non-contiguous inputs
-    (`t[::2]`, a transposed `obs_dist`); duplicate epochs; a constant
-    observation matrix; a constant nuisance matrix (`zz = 0`).
-    `test_periodogram_baseline.py` stays green untouched.
-  - *Benchmark:* a script, not a test. ~5,000 periods at 597 and 824
-    epochs; ordinary and semi-partial; median of interleaved repeats,
-    peak memory (`tracemalloc`), NumPy version, BLAS, machine. Results in
-    the commit message. The reported reference timings (~21 vs 46 s at
-    597 epochs, ~41 vs 93 s at 824) are hypotheses to reproduce.
+- **Faster PDC sweep — done (patch release 0.2.2).** One period at a time,
+  as before; batching over periods was measured and is not faster (one
+  period is passes over N×N arrays, the loop overhead is microseconds).
+  - *Byte-identical part:* `Δt` built once; for the semi-partial mode
+    `E = A − (⟨A,Z⟩/⟨Z,Z⟩)Z` and `⟨E,E⟩` formed once; the phase matrix,
+    its U-centring and the inner-product terms written into two reused
+    N×N buffers. 1.5× (ordinary), 1.75× (semi-partial), peak memory never
+    higher.
+  - *Rounding-changing part:* the phase reduced as `P · frac(Δt · (1/P))`
+    instead of `np.mod(Δt, P)`, which was two-thirds of a period. Scores
+    move by about 2e-15 (1.3e-13 at the 4-epoch minimum); the baseline was
+    re-blessed for it. Against the sweep before this work, 5,000 periods:
+    3.6–3.9× (ordinary), 4.2–4.4× (semi-partial); at 824 epochs
+    34 s → 8.8 s and 37 s → 8.5 s.
+  - *Guards:* `tests/_pdc_reference.py` is the pre-optimisation sweep,
+    frozen; `tests/test_pdc_lean_sweep.py` compares against it on 28
+    cases (same NaN positions and exceptions, scores within 1e-12, same
+    best period); `benchmarks/pdc_sweep.py` times both, interleaved.
+  - *Found on the way:* the partial PDC is ill-conditioned when the
+    nuisance explains the observations almost fully (coupling → 1): `E`
+    is then rounding residue and every score is noise over noise.
+- **Faster PDC sweep, further — not planned.** Two more rounding-changing
+  options were measured on top: the algebraic shortcut (with `A`
+  U-centred, `⟨Ã, B̃⟩ = ⟨Ã, B⟩`, and `‖B̃‖²` follows from the row sums of
+  `B`, so the phase matrix need not be centred; about 1.2×), and BLAS dot
+  products for the two inner products (about 1.05×). The shortcut needs a
+  written proof before it is considered. A JAX sweep (item 2) is the
+  other route.
 - **Both curves in one sweep — PARKED.** The phase matrix depends only on
   the times and the trial period, so a caller wanting the ordinary and
   the partial curve today builds it twice. A shared sweep adds ~0.4 ms
@@ -203,15 +194,6 @@ re-blessed once more when it is declared stable.
   equals the two separate calls.
 - A further "additional partial" statistic is out of scope until its
   mathematical definition and intended scientific meaning are supplied.
-- **Faster PDC sweep, step two — changes rounding.** About half of a
-  period is `np.mod`; the rest of the gain is the algebraic shortcut:
-  with the observation matrix U-centred,
-  `⟨Ã, B̃⟩ = Σ_{i≠j} Ãᵢⱼ Bᵢⱼ / (n(n−3))`, and `‖B̃‖` follows from row sums, so
-  the phase matrix need not be centred per trial period. Also candidates:
-  a cheaper phase reduction than `np.mod`, and the upper triangle only
-  (the matrices are symmetric). Each changes rounding: own commit, own
-  re-bless with what moved and by how much — separate from step one. A
-  JAX sweep (item 2) is the other route.
 
 ## 6. Correlated noise within a transit, and merging CCDs into transits — PARKED
 

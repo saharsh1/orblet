@@ -57,7 +57,11 @@ def _grid(n_periods: int) -> np.ndarray:
 SCORE_ATOL = 1e-12
 
 #: True while the sweep is meant to reproduce the reference bit for bit.
-EXACT_BYTES = True
+#: False since the phase reduction became P · frac(Δt · (1/P)) instead of
+#: np.mod(Δt, P): the largest |score − reference| measured here is 1.3e-13,
+#: in the 4-epoch case (few terms, heavy cancellation in the U-centring);
+#: from 40 epochs up it is about 2e-15.
+EXACT_BYTES = False
 
 #: Largest |score − reference| over all cases, filled as the cases run.
 MAX_SEEN = {"score": 0.0}

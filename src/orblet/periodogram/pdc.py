@@ -146,10 +146,16 @@ def compute_pdc_periodogram(
     scores = np.full_like(periods, np.nan, dtype=float)
 
     # The pairwise time differences do not depend on the period: built once.
-    # Per period, the same arithmetic as _phase_distance_matrix(t, P),
+    # Per period, the phase distance of _phase_distance_matrix(t, P), then
     # _u_center and _u_inner, written into two reused buffers instead of
     # fresh arrays: ``phase_dist`` becomes the centred phase matrix B, and
     # ``scratch`` holds the reduced phases, then the inner-product terms.
+    #
+    # The phase is reduced as phi = P · frac(Δt / P), with Δt / P formed as
+    # Δt · (1/P): the same quantity as np.mod(Δt, P), about 2.5× faster,
+    # but rounded differently.  Its error in phi is of order |Δt| · 1e-16
+    # (1e-13 d over a 5-yr baseline), and a rounding up to phi = P gives the
+    # same distance as phi = 0.
     dt = t[:, None] - t[None, :]
     scratch = np.empty_like(dt)
     phase_dist = np.empty_like(dt)
@@ -158,7 +164,10 @@ def compute_pdc_periodogram(
         if not np.isfinite(P) or P <= 0:
             continue
 
-        phi = np.mod(dt, P, out=scratch)
+        cycles = np.multiply(dt, 1.0 / P, out=scratch)
+        np.floor(cycles, out=phase_dist)
+        phi = np.subtract(cycles, phase_dist, out=scratch)
+        np.multiply(phi, P, out=phi)
         np.subtract(P, phi, out=phase_dist)
         np.multiply(phi, phase_dist, out=phase_dist)
         B = _u_center(phase_dist, out=phase_dist)
