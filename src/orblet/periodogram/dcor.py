@@ -72,37 +72,30 @@ def _pdc_score_from_centered(
     return _u_inner(A, B) / den
 
 
-def _semipartial_pdc_score_from_centered(
-    A: np.ndarray,
+def _semipartial_pdc_score_from_residual(
+    E: np.ndarray,
+    ee: float,
     B: np.ndarray,
-    Z: np.ndarray,
-    zz: float,
-    az: float,
 ) -> float:
     """
-    Semi-partial PDC score from pre-U-centered matrices.
+    Semi-partial PDC score from the pre-computed residual matrix.
 
     The nuisance is projected out of the observation matrix only:
     E = A − (⟨A,Z⟩/⟨Z,Z⟩) Z, then the score is ⟨E,B⟩ / (‖E‖ ‖B‖).
+    ``E`` does not depend on the trial period, so the caller forms it once
+    (only when ⟨Z,Z⟩ > 0; otherwise the score is NaN at every period).
 
     Parameters
     ----------
-    A : (N, N) array
-        U-centered observation matrix (precomputed).
+    E : (N, N) array
+        Residual observation matrix, A − (⟨A,Z⟩/⟨Z,Z⟩) Z (precomputed).
+    ee : float
+        Precomputed _u_inner(E, E).
     B : (N, N) array
         U-centered phase matrix (computed per period).
-    Z : (N, N) array
-        U-centered nuisance matrix (precomputed).
-    zz, az : float
-        Precomputed inner products: _u_inner(Z,Z), _u_inner(A,Z).
     """
-    if zz <= 0:
-        return np.nan
-
-    # E = A - proj(A onto Z); use precomputed az.
-    E = A - (az / zz) * Z
     num = _u_inner(E, B)
-    den = np.sqrt(max(_u_inner(E, E), 0.0) * max(_u_inner(B, B), 0.0))
+    den = np.sqrt(max(ee, 0.0) * max(_u_inner(B, B), 0.0))
 
     if den == 0.0:
         return np.nan

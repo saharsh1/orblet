@@ -9,7 +9,7 @@ from orblet.periodogram._common import _as_1d_float
 from orblet.periodogram.distances import _circular_distance
 from orblet.periodogram.dcor import (
     _pdc_score_from_centered,
-    _semipartial_pdc_score_from_centered,
+    _semipartial_pdc_score_from_residual,
     _u_center,
     _u_inner,
 )
@@ -135,21 +135,37 @@ def compute_pdc_periodogram(
         az = _u_inner(A, Z)
         # The same arithmetic as distance_correlation(obs_dist, nuisance_dist).
         coupling = _pdc_score_from_centered(A, Z, aa)
+        # The observations with the nuisance projected out do not depend on
+        # the period: formed once.  With zz <= 0 there is no projection and
+        # every semi-partial score is NaN.
+        if zz > 0:
+            E = A - (az / zz) * Z
+            ee = _u_inner(E, E)
 
     # ── Sweep over trial periods ──────────────────────────────────────────
     scores = np.full_like(periods, np.nan, dtype=float)
+
+    # The pairwise time differences do not depend on the period: built once.
+    # Per period, the same arithmetic as _phase_distance_matrix(t, P),
+    # written into two reused buffers instead of fresh arrays.
+    dt = t[:, None] - t[None, :]
+    phi = np.empty_like(dt)
+    phase_dist = np.empty_like(dt)
 
     for i, P in enumerate(periods):
         if not np.isfinite(P) or P <= 0:
             continue
 
-        B = _u_center(_phase_distance_matrix(t, P))
+        np.mod(dt, P, out=phi)
+        np.subtract(P, phi, out=phase_dist)
+        np.multiply(phi, phase_dist, out=phase_dist)
+        B = _u_center(phase_dist)
 
         if partial_mode == "none":
             scores[i] = _pdc_score_from_centered(A, B, aa)
         elif partial_mode == "semi":
-            scores[i] = _semipartial_pdc_score_from_centered(
-                A, B, Z, zz, az,
+            scores[i] = (
+                _semipartial_pdc_score_from_residual(E, ee, B) if zz > 0 else np.nan
             )
         else:
             raise ValueError("partial_mode must be 'none' or 'semi'")
