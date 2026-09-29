@@ -147,25 +147,28 @@ def compute_pdc_periodogram(
 
     # The pairwise time differences do not depend on the period: built once.
     # Per period, the same arithmetic as _phase_distance_matrix(t, P),
-    # written into two reused buffers instead of fresh arrays.
+    # _u_center and _u_inner, written into two reused buffers instead of
+    # fresh arrays: ``phase_dist`` becomes the centred phase matrix B, and
+    # ``scratch`` holds the reduced phases, then the inner-product terms.
     dt = t[:, None] - t[None, :]
-    phi = np.empty_like(dt)
+    scratch = np.empty_like(dt)
     phase_dist = np.empty_like(dt)
 
     for i, P in enumerate(periods):
         if not np.isfinite(P) or P <= 0:
             continue
 
-        np.mod(dt, P, out=phi)
+        phi = np.mod(dt, P, out=scratch)
         np.subtract(P, phi, out=phase_dist)
         np.multiply(phi, phase_dist, out=phase_dist)
-        B = _u_center(phase_dist)
+        B = _u_center(phase_dist, out=phase_dist)
 
         if partial_mode == "none":
-            scores[i] = _pdc_score_from_centered(A, B, aa)
+            scores[i] = _pdc_score_from_centered(A, B, aa, out=scratch)
         elif partial_mode == "semi":
             scores[i] = (
-                _semipartial_pdc_score_from_residual(E, ee, B) if zz > 0 else np.nan
+                _semipartial_pdc_score_from_residual(E, ee, B, out=scratch)
+                if zz > 0 else np.nan
             )
         else:
             raise ValueError("partial_mode must be 'none' or 'semi'")

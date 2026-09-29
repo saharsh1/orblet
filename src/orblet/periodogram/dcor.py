@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 
 
-def _u_center(d: np.ndarray) -> np.ndarray:
+def _u_center(d: np.ndarray, out: np.ndarray | None = None) -> np.ndarray:
     """
     U-center a symmetric distance matrix (unbiased prescription).
 
@@ -18,6 +18,10 @@ def _u_center(d: np.ndarray) -> np.ndarray:
     ----------
     d : (N, N) array
         Symmetric distance matrix.
+    out : (N, N) array, optional
+        Where to write the result; may be ``d`` itself (the sums are taken
+        first).  The same operations in the same order as without it, so
+        the result is identical to the last bit.
 
     Returns
     -------
@@ -32,26 +36,38 @@ def _u_center(d: np.ndarray) -> np.ndarray:
     col_sum = np.sum(d, axis=0, keepdims=True)
     total = np.sum(d)
 
-    a = (
-        d
-        - row_sum / (n - 2)
-        - col_sum / (n - 2)
-        + total / ((n - 1) * (n - 2))
-    )
+    if out is None:
+        a = (
+            d
+            - row_sum / (n - 2)
+            - col_sum / (n - 2)
+            + total / ((n - 1) * (n - 2))
+        )
+    else:
+        a = np.subtract(d, row_sum / (n - 2), out=out)
+        np.subtract(a, col_sum / (n - 2), out=a)
+        np.add(a, total / ((n - 1) * (n - 2)), out=a)
     np.fill_diagonal(a, 0.0)
     return a
 
 
-def _u_inner(a: np.ndarray, b: np.ndarray) -> float:
-    """Inner product for U-centered distance matrices."""
+def _u_inner(a: np.ndarray, b: np.ndarray, out: np.ndarray | None = None) -> float:
+    """Inner product for U-centered distance matrices.
+
+    ``out``, an (N, N) scratch array, receives the elementwise product
+    instead of a fresh array; the sum is over the same values in the same
+    layout, so the result is identical to the last bit.
+    """
     n = a.shape[0]
-    return float(np.sum(a * b) / (n * (n - 3)))
+    prod = a * b if out is None else np.multiply(a, b, out=out)
+    return float(np.sum(prod) / (n * (n - 3)))
 
 
 def _pdc_score_from_centered(
     A: np.ndarray,
     B: np.ndarray,
     aa: float,
+    out: np.ndarray | None = None,
 ) -> float:
     """
     Ordinary PDC score from pre-U-centered matrices.
@@ -64,18 +80,21 @@ def _pdc_score_from_centered(
         U-centered phase matrix (computed per period).
     aa : float
         Precomputed _u_inner(A, A).
+    out : (N, N) array, optional
+        Scratch space for the inner products (see :func:`_u_inner`).
     """
-    bb = _u_inner(B, B)
+    bb = _u_inner(B, B, out)
     den = np.sqrt(max(aa, 0.0) * max(bb, 0.0))
     if den == 0.0:
         return np.nan
-    return _u_inner(A, B) / den
+    return _u_inner(A, B, out) / den
 
 
 def _semipartial_pdc_score_from_residual(
     E: np.ndarray,
     ee: float,
     B: np.ndarray,
+    out: np.ndarray | None = None,
 ) -> float:
     """
     Semi-partial PDC score from the pre-computed residual matrix.
@@ -93,9 +112,11 @@ def _semipartial_pdc_score_from_residual(
         Precomputed _u_inner(E, E).
     B : (N, N) array
         U-centered phase matrix (computed per period).
+    out : (N, N) array, optional
+        Scratch space for the inner products (see :func:`_u_inner`).
     """
-    num = _u_inner(E, B)
-    den = np.sqrt(max(ee, 0.0) * max(_u_inner(B, B), 0.0))
+    num = _u_inner(E, B, out)
+    den = np.sqrt(max(ee, 0.0) * max(_u_inner(B, B, out), 0.0))
 
     if den == 0.0:
         return np.nan
