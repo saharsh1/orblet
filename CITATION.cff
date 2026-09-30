@@ -11,8 +11,8 @@ type: software
 authors:
   - family-names: Shahaf
     given-names: Sahar
-version: 0.2.1
-date-released: 2026-09-25
+version: 0.2.2
+date-released: 2026-09-29
 license: MIT
 repository-code: https://github.com/saharsh1/orblet
 url: https://pypi.org/project/orblet/

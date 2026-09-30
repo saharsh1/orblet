@@ -67,7 +67,7 @@ import importlib
 #: here (``[tool.setuptools.dynamic]`` in orblet's pyproject), and the packaging
 #: test pins that the installed metadata agrees. A plain literal on purpose —
 #: setuptools parses it from the source without importing the package.
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # ── Design matrices: one column per linear parameter ───────────────

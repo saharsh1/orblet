@@ -4,6 +4,44 @@ orblet follows semantic versioning. While the version is 0.x, a change to
 the public surface (a name added, moved or removed, a convention changed) is
 a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
+## 0.2.2 — 2026-09-29
+
+A patch: no public name added, moved or removed.
+
+**Faster PDC periodogram.** `compute_pdc_periodogram` is 3.6–3.9× faster
+in the ordinary mode and 4.2–4.4× in the semi-partial mode (5,000 trial
+periods at 597 and 824 epochs; 824 epochs: 34.5 s → 8.8 s and
+37.2 s → 8.5 s). Peak memory is never higher. The work that does not
+depend on the trial period is done once, the per-period matrices reuse two
+buffers, and the phase is reduced as `P · frac(Δt · (1/P))` instead of
+`np.mod(Δt, P)`.
+
+**Numbers moved.** The phase reduction rounds differently: PDC scores move
+by about 2e-15 (1.3e-13 at the 4-epoch minimum), and the best period is
+unchanged in every tested case. The periodogram baseline is re-blessed for
+the PDC scores and their false-alarm probabilities; the distance kernels,
+the scan-angle coupling, Lomb–Scargle and the peak widths are unchanged.
+
+**Fixed.**
+
+- `EccOmegaDiskPrior` rejects the unit circle (`h² + k² = 1`, i.e.
+  `e = 1`), as its docstring stated; before, only the likelihood rejected
+  it. `UniformCircularPrior` (the ω and τ disks) still admits the circle,
+  where a phase is valid.
+- `solve_companion_mass` returns NaN for `sin_i > 1`, as it does for every
+  other unphysical input; `sin_i = 1` is unchanged.
+- The four quickstart notebooks are valid nbformat 4 again (18 code cells
+  had lost their `execution_count`), so GitHub renders them.
+
+**Added.**
+
+- `CITATION.cff`, so GitHub offers "Cite this repository".
+- Tests: the constants against `astropy.constants` (with the two deliberate
+  differences, `GM_SUN_SI` and `MSUN_IN_MJUP`, pinned); notebook structure
+  and the citation version; the PDC sweep against a frozen copy of the
+  pre-optimisation sweep; `benchmarks/pdc_sweep.py` to time it.
+- The joint-fit notebook's all-parameter rung samples a jitter per channel.
+
 ## 0.2.1 — 2026-09-25
 
 First release. Thirty-six public names behind one front door, `orblet`:
