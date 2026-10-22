@@ -15,3 +15,6 @@ CLAUDE.md
 CLAUDE.local.md
 .vscode/
 .idea/
+
+# tutorial data cache: downloaded public files, never committed
+notebooks/tutorials/_data/

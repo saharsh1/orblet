@@ -106,6 +106,25 @@ the parallax signal use the same array and closure is exact. For any other
 truth, construct `OrbitSimulator(...)` directly and pass it as
 `load_simulated_inputs(simulator=..., cadence=..., seed=...)`.
 
+## Tutorials on Gaia DR4 data
+
+`notebooks/tutorials/` is a three-part lesson on the public Gaia DR4
+pre-release epoch astrometry (ESA, June 2026; 12 sources, downloaded by the
+notebooks themselves into a git-ignored cache). Each notebook prints the
+model and its design matrix, fits in stages, and lists every parameter
+against the published values:
+
+1. `01_dr4_epoch_astrometry_single_star` — the table, one transit, ten
+   CCDs; the five-parameter solution of LSPM J1324+6124.
+2. `02_dr4_astrometric_orbit_gaia4` — the Thiele–Innes orbit of the planet
+   Gaia-4 b: period search with the marginal likelihood, all elements, the
+   planet mass; emcee appendix.
+3. `03_dr4_bh3_joint_fit` — Gaia BH3 with the Gaia RVS radial velocities
+   (VizieR): the joint astro-spectroscopic solution and the black-hole mass.
+
+The notebooks need the `sampling` and `plots` extras and, for the third,
+`astroquery`.
+
 ## Citing
 
 If you use orblet, cite it with the metadata in

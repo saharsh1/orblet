@@ -4,6 +4,14 @@ orblet follows semantic versioning. While the version is 0.x, a change to
 the public surface (a name added, moved or removed, a convention changed) is
 a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
+## Unreleased
+
+No change to the package. Three tutorial notebooks on the public Gaia DR4
+pre-release epoch astrometry, in `notebooks/tutorials/` (single star,
+astrometric orbit of Gaia-4 b, joint astro-spectroscopic orbit of Gaia
+BH3), with the loader `notebooks/tutorials/dr4_prerelease.py`. The
+notebooks download the data; nothing real is committed.
+
 ## 0.2.2 — 2026-09-29
 
 A patch: no public name added, moved or removed.
