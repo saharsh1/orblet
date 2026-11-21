@@ -9,7 +9,7 @@ description = "Atoms for Keplerian orbit analysis: forward models, likelihoods, 
 authors = [{name = "Sahar Shahaf", email = "sahar.shahaf@gmail.com"}]
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 keywords = ["astronomy", "binary-stars", "orbits", "astrometry", "radial-velocity", "kepler"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -17,6 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 
@@ -25,7 +26,7 @@ classifiers = [
 dependencies = [
     "numpy>=2,<3",
     "scipy>=1.14,<2",
-    "astropy>=7,<8",
+    "astropy>=7,<9",
     "matplotlib>=3.8,<4",
 ]
 

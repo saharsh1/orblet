@@ -6,7 +6,46 @@ a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
 ## Unreleased
 
-No change to the package. Three tutorial notebooks on the public Gaia DR4
+**The astrometric mass-ratio function (AMRF) leaves orblet — names
+removed.** `orblet.interpret.amrf` is gone, with every name in it: `amrf`,
+`amrf_curve`, `amrf_ms_locus`, `amrf_unresolved_pair_locus`,
+`ms_amrf_boundary`, `triple_amrf_boundary`, `classify_amrf`,
+`validate_beta_relation`, `ms_flux_ratio`, `BetaRelation`, the label
+constants and `AMRF_LABELS`, `MS_FLUX_RATIO_EXPONENT` and `PAIR_MODEL`.
+The reason is the placement test: the triage needs a mass–luminosity
+relation, a metallicity, an age and a pair model, which are a stellar
+model and not an orbit. It lives in the separate `amrf-triage` package.
+orblet keeps what an orbit gives on its own: the mass functions, the
+companion-mass solve, the astrometric upper limit and the photocentre
+flux-ratio relations of `orblet.interpret.flux_ratio`.
+
+- `AMRF_BETA_BAND` (the band of the flux ratio, `"G"`) is now defined in
+  `orblet.interpret.flux_ratio`, the one module that still uses it.
+  Import it from there.
+- No computed number moves: nothing that remains used the removed code.
+- The quickstart notebook `04_interpretation_mass.ipynb` loses its AMRF
+  part.
+
+**The Lomb–Scargle power is exact on every frequency grid — a numeric
+change.** `compute_lomb_scargle_periodogram` now sets the astropy method
+itself: `"cython"` for one term, `"chi2"` for more. Before, astropy chose,
+and on a regular grid (`spacing="auto"`, `spacing="lin"`, a regular
+explicit `frequency`) it took an FFT-based approximation whose error
+depends on the astropy version. What moved: the power on those grids, by
+up to 6.6e-3 on the baseline series of 40 epochs (peak power 0.98); five
+baseline cases are re-blessed (`ls_auto`, `ls_lin`, `ls_flagged`, `ls_nan`,
+`ls_nterms2`, the `.power` entry of each). What did not move: the
+frequency grids, the best frequency and best period of every case, and
+the power on a logarithmic grid, which was exact already. The power is
+now the same number, bit for bit, under astropy 7.2 and 8.0. Cost: about
+1 s for 800 epochs and 100 000 frequencies.
+
+**astropy 8 and Python 3.13 are supported** (`astropy>=7,<9`,
+`requires-python = ">=3.11,<3.14"`). The suite passes on Python 3.12 with
+astropy 7.2 and on Python 3.13 with astropy 7.2 and 8.0 (conda-forge
+builds), every baseline bit for bit.
+
+Three tutorial notebooks on the public Gaia DR4
 pre-release epoch astrometry, in `notebooks/tutorials/` (single star,
 astrometric orbit of Gaia-4 b, joint astro-spectroscopic orbit of Gaia
 BH3), with the loader `notebooks/tutorials/dr4_prerelease.py`. The
