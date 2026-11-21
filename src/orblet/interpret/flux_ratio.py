@@ -129,11 +129,12 @@ from orblet.interpret.companion_mass import (
 )
 
 
-# The band beta is defined in.  Defined ONCE here (design note H-5); the
-# A1 AMRF module must IMPORT this name rather than re-declare it, or the
-# MS beta(q, m1) relation and this inversion can silently disagree about
-# what "flux ratio" means.
-from orblet.interpret.amrf import AMRF_BETA_BAND  # noqa: E402  (single band authority — design-note H-5; amrf.py owns it)
+#: The photometric band the flux ratio beta refers to.  beta is the flux
+#: ratio in the band the ASTROMETRY is measured in; for Gaia that is the
+#: broad G band.  Defined ONCE, here: any code that supplies a beta to
+#: this layer (a mass-luminosity relation, an SED) must give it in this
+#: band.
+AMRF_BETA_BAND: str = "G"
 
 # Chain keys this layer consumes: the four observables that build r, plus
 # the spectroscopic mass function that builds q.

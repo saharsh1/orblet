@@ -18,8 +18,9 @@ radians, scan angle ψ counter-clockwise from north, Keplerian year =
 **Not on the surface, on purpose:** the resolved-pair forward model and
 the design-builder protocol (no user yet), the MAP-sample `simulate`
 builders (solver layer), the bulk presearch driver, the Holl+2023 noise
-law (imaging stack, paper pending), and `ms_flux_ratio` (a shipped
-placeholder; supply your own flux-ratio relation to the AMRF functions).
+law (imaging stack, paper pending), and the astrometric mass-ratio
+function with its triage (a stellar model, not an orbit: it lives in the
+separate `amrf-triage` package).
 
 ## Forward models — `notebooks/quickstart/01_forward_models_and_simulation.ipynb`
 
@@ -85,7 +86,6 @@ placeholder; supply your own flux-ratio relation to the AMRF functions).
 | `a1sini_au`, `a_phot_au`, `mass_function_au`, `astrometric_upper_limit_au`, `companion_mass_bracket`, `consistency_verdict` | `orblet.interpret.astrometric_upper_limit` | the observables-first mass ladder and the non-detection bound | AU, days, M☉ | β = 0 ⇒ a_phot = a₁ |
 | `MeasuredSinI` | `orblet.interpret.flux_ratio` | row-aligned measured sin i carrier for the mass layer | — | draws must match the mass-function draws one to one |
 | `signed_photocentre_axis_ratio`, `beta_branches_from_axis_ratio` | `orblet.interpret.flux_ratio` | a_phot / a₁ for (q, β) and its two-branch inverse | — | mirror branch degeneracy |
-| `amrf`, `amrf_curve`, `ms_amrf_boundary`, `triple_amrf_boundary`, `classify_amrf`, `validate_beta_relation` | `orblet.interpret.amrf` | the astrometric mass-ratio function and its triage | — | pass your own `beta_relation(q, m1)`; the shipped MS relation is a placeholder |
 | `chain_quantiles`, `chain_credible_interval`, `chain_circular_summary`, `chain_summary_table` | `orblet.chain_stats` | posterior summaries | as the chain | flat post-burn-in chains; circular summary via the resultant vector |
 | `UniformInFrequencyPeriodPrior`, `EccOmegaDiskPrior`, `CosUniformInclinationPrior`, `LogUniformPrior`, `TruncatedNormalPrior`, `NormalPrior` | `orblet.priors` | the prior family the engines use, callable by you | physics units | the frequency prior favours short periods (∝ 1/P²) |
 | `default_companion_priors`, `default_system_priors` | `orblet.priors` | the engines' defaults | M☉, days | companion ceiling 5 M☉ (excludes black holes); total mass 1 M☉ — override |

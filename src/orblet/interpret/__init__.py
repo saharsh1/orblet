@@ -2,8 +2,7 @@
 
 Everything here sits AFTER the fit. The solvers produce orbital elements and
 their uncertainties; these modules take that output and ask what it implies —
-a companion mass, a flux ratio, an upper limit on an undetected companion, a
-place on the astrometric mass-ratio function.
+a companion mass, a flux ratio, an upper limit on an undetected companion.
 
 The separation is deliberate and it is the one in §9 of the project's
 conventions: a measured quantity and an inferred one are not the same kind of

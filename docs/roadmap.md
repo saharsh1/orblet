@@ -98,9 +98,9 @@ mass, with their assumptions stated the way `companion_mass` states its
 sentinels. Read the source first; the placement test applies (an atom
 answers a question on its own).
 
-Not to be confused with `interpret/amrf.py` (the astrometric mass-ratio
-function), which already exists. Steps: read the repository and list each
-quantity with its inputs and assumptions; apply the placement test to
+Not to be confused with the astrometric mass-ratio function, which is
+not part of orblet (the `amrf-triage` package holds it). Steps: read the
+repository and list each quantity with its inputs and assumptions; apply the placement test to
 each; port with tests on synthetic cases whose answer is known in closed
 form. New names: minor release. Rough size: a day after the reading.
 
