@@ -98,7 +98,8 @@ Conditionality (state it wherever beta is quoted)
   column may descend from the SAME astrometric solution, so its
   provenance must be verified before it is used as external evidence.
 - BAND HOMOGENEITY: beta is the flux ratio in the band the astrometry is
-  measured in — for Gaia the broad G band (:data:`AMRF_BETA_BAND`).  An
+  measured in (for Gaia astrometry, the broad G band).  This module does
+  not know that band and does not record it: the caller does.  An
   SED-derived or MS-relation beta must be converted into that band
   first; bolometric and RVS ratios are different numbers.
 - the JOINT FIT's own conditioning: the period alias it settled on, its
@@ -128,13 +129,6 @@ from orblet.interpret.companion_mass import (
     companion_mass_from_rv_posterior,
 )
 
-
-#: The photometric band the flux ratio beta refers to.  beta is the flux
-#: ratio in the band the ASTROMETRY is measured in; for Gaia that is the
-#: broad G band.  Defined ONCE, here: any code that supplies a beta to
-#: this layer (a mass-luminosity relation, an SED) must give it in this
-#: band.
-AMRF_BETA_BAND: str = "G"
 
 # Chain keys this layer consumes: the four observables that build r, plus
 # the spectroscopic mass function that builds q.
@@ -270,8 +264,8 @@ def signed_photocentre_axis_ratio(q, beta) -> np.ndarray:
     q : array or float
         Mass ratio ``m2 / m1`` (dimensionless, > 0).
     beta : array or float
-        Flux ratio ``F2 / F1`` in the astrometric band
-        (:data:`AMRF_BETA_BAND`; dimensionless, >= 0).
+        Flux ratio ``F2 / F1`` in the band the astrometry is measured
+        in (dimensionless, >= 0).
 
     Returns
     -------
@@ -320,7 +314,8 @@ def beta_branches_from_axis_ratio(r, q) -> dict:
     -------
     dict
         ``"standard"`` / ``"mirror"``: flux-ratio arrays (dimensionless,
-        band :data:`AMRF_BETA_BAND`), NaN where that branch is invalid.
+        in the band the astrometry is measured in), NaN where that
+        branch is invalid.
         ``"valid_standard"`` / ``"valid_mirror"``: boolean masks.
         ``"in_domain"``: boolean mask for the PHYSICAL domain
         ``r <= max(1, 1/q)``; ``False`` marks a closure failure that no
@@ -444,7 +439,7 @@ def beta_from_joint_posterior(
     -------
     dict
         ``"beta"``: ``{"standard", "mirror"}`` — per-draw flux ratios in
-        the :data:`AMRF_BETA_BAND` band, NaN off-branch.
+        the band the astrometry is measured in, NaN off-branch.
 
         ``"valid"``: ``{"standard", "mirror", "in_domain"}`` boolean
         masks (an r-domain closure failure is ``~in_domain``).
@@ -474,7 +469,7 @@ def beta_from_joint_posterior(
         source, the ``sin i`` source, the r form, the primary-mass prior
         and the seed.
 
-        ``"_meta"``: scalars — band, draw counts, mass convention,
+        ``"_meta"``: scalars — draw counts, mass convention,
         ``bimodality_flag``, ``m1_draws_source``, the detection-screen
         record (``detection_screen`` is ``"recorded"`` /
         ``"not_recorded"``, and ``screen_threshold_applied`` is always
@@ -671,7 +666,6 @@ def beta_from_joint_posterior(
     }
 
     meta = {
-        "beta_band": AMRF_BETA_BAND,
         "n_draws": int(n_draws),
         "n_draws_usable": n_usable,
         "mass_convention": mass["_meta"]["mass_convention"],

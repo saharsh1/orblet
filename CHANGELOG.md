@@ -19,9 +19,10 @@ orblet keeps what an orbit gives on its own: the mass functions, the
 companion-mass solve, the astrometric upper limit and the photocentre
 flux-ratio relations of `orblet.interpret.flux_ratio`.
 
-- `AMRF_BETA_BAND` (the band of the flux ratio, `"G"`) is now defined in
-  `orblet.interpret.flux_ratio`, the one module that still uses it.
-  Import it from there.
+- `AMRF_BETA_BAND` (the text `"G"`) is removed too, and with it the
+  `beta_band` entry in the `_meta` block of `beta_from_joint_posterior`.
+  It entered no computation. The flux ratio is in the band the astrometry
+  is measured in; orblet does not know that band, the caller does.
 - No computed number moves: nothing that remains used the removed code.
 - The quickstart notebook `04_interpretation_mass.ipynb` loses its AMRF
   part.
