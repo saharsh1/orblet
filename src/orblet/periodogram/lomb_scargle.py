@@ -5,6 +5,16 @@ from __future__ import annotations
 import numpy as np
 from astropy.timeseries import LombScargle
 
+# The astropy method for each model, set here and never left to astropy's
+# "auto".  Both are EXACT: they evaluate the least-squares periodogram at
+# each frequency directly.  astropy's "auto" would take an FFT-based
+# approximation on a regular frequency grid, and the size of that
+# approximation's error depends on the astropy version (up to about
+# 3e-3 in power in astropy 7, about 1e-13 in astropy 8).  With the
+# method fixed, the power is the same number in both.
+_METHOD_ONE_TERM: str = "cython"     # nterms == 1: the direct sum, compiled
+_METHOD_MULTI_TERM: str = "chi2"     # nterms > 1: a linear fit at each frequency
+
 
 def compute_lomb_scargle_periodogram(
     radial_velocity,
@@ -43,6 +53,15 @@ def compute_lomb_scargle_periodogram(
         If True, also return the LombScargle object itself.
     nterms, normalization, center_data, fit_mean, frequency, min_frequency, max_frequency, spacing, n_freq, samples_per_peak, nyquist_factor
         Configuration for LombScargle and period search grid. See astropy LombScargle documentation.
+
+    Notes
+    -----
+    The power is computed with an EXACT astropy method on every frequency
+    grid: ``"cython"`` for ``nterms == 1`` and ``"chi2"`` for
+    ``nterms > 1``.  astropy's FFT-based approximations (``"fast"``,
+    ``"fastchi2"``) are never used, so the power does not depend on the
+    astropy version.  The cost is one pass over the epochs per frequency:
+    about 1 s for 800 epochs and 100 000 frequencies.
 
     Returns
     -------
@@ -91,12 +110,18 @@ def compute_lomb_scargle_periodogram(
         fit_mean=fit_mean,
     )
 
+    # 3b. The exact method for this model (see the module constants)
+    if nterms == 1:
+        method = _METHOD_ONE_TERM
+    else:
+        method = _METHOD_MULTI_TERM
+
     # 4. Frequency grid: use explicit frequency argument if given, else construct grid
     if frequency is not None:
         # If times carry units, make sure frequency has compatible units
         if hasattr(times, "unit") and not hasattr(frequency, "unit"):
             frequency = np.asarray(frequency) * (1 / times.unit)
-        power = ls.power(frequency)
+        power = ls.power(frequency, method=method)
 
     else:
         # Compute default frequency limits if not provided
@@ -121,13 +146,14 @@ def compute_lomb_scargle_periodogram(
                 maximum_frequency=max_frequency,
                 samples_per_peak=samples_per_peak,
                 nyquist_factor=nyquist_factor,
+                method=method,
             )
         elif spacing == "lin":
             frequency = np.linspace(min_frequency, max_frequency, int(n_freq))
-            power = ls.power(frequency)
+            power = ls.power(frequency, method=method)
         elif spacing == "log":
             frequency = np.geomspace(min_frequency, max_frequency, int(n_freq))
-            power = ls.power(frequency)
+            power = ls.power(frequency, method=method)
         else:
             raise ValueError("spacing must be one of: 'auto', 'lin', 'log'")
 
