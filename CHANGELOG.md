@@ -4,7 +4,10 @@ orblet follows semantic versioning. While the version is 0.x, a change to
 the public surface (a name added, moved or removed, a convention changed) is
 a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
-## Unreleased
+## 0.3.0 — 2026-11-21
+
+A minor release: names removed from the public surface, and one deliberate
+numeric change (the Lomb–Scargle power).
 
 **The astrometric mass-ratio function (AMRF) leaves orblet — names
 removed.** `orblet.interpret.amrf` is gone, with every name in it: `amrf`,
