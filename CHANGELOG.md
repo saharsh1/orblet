@@ -4,7 +4,7 @@ orblet follows semantic versioning. While the version is 0.x, a change to
 the public surface (a name added, moved or removed, a convention changed) is
 a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
-## Unreleased
+## 0.5.0 — 2026-11-23
 
 A minor release: names added to the public surface. No existing number
 moves.
