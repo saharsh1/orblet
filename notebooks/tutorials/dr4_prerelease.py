@@ -124,12 +124,19 @@ def explode_transits(
        Gaia solution rejected.
     6. Optionally add ``agis_source_excess_noise`` to the error in
        quadrature, as ESA's ``gaiasupdate`` does (``add_excess_noise``).
+    7. Colour fields (tutorial 4): ``colour_factor_al`` per CCD, and the
+       per-transit ``nu_eff_used_in_astrometry`` and ``nu_eff_error``
+       repeated on the CCDs of the transit.  They do NOT enter the
+       selection of step 5, so the data of tutorials 1 to 3 do not change;
+       a kept datum can have a non-finite colour factor.
 
     Returns the orblet astrometry dict: ``obs_time`` (days since J2010.0
     TCB), ``scan_angle`` (rad), ``centroid_pos`` (mas), ``centroid_pos_err``
     (mas), ``parallax_factor_al``, plus ``transit_id``, ``ccd_index``,
     ``ra0_deg``, ``dec0_deg``, ``ref_epoch_days``, ``excess_noise_mas`` and
-    the counts ``n_transits``, ``n_ccd_total``.
+    the counts ``n_transits``, ``n_ccd_total``; and the colour inputs
+    ``colour_factor_al`` (mas um), ``nu_eff_used`` (1/um) and
+    ``nu_eff_error`` (1/um), one value per kept datum.
     """
     rows = table[np.asarray(table["source_id"]) == source_id]
     if len(rows) == 0:
@@ -137,6 +144,7 @@ def explode_transits(
 
     t_days, psi_rad, w_mas, sig_mas, pf, used = [], [], [], [], [], []
     transit_id, ccd_index = [], []
+    colour_factor, nu_eff_used, nu_eff_error = [], [], []
     for row in rows:
         t_ns = _row_array(row["obs_time_tcb"])
         bary_ns = _row_scalar(row["obs_time_bary_corr"], default=0.0)
@@ -149,6 +157,9 @@ def explode_transits(
         pf.append(np.full(n, _row_scalar(row["parallax_factor_al"])))
         transit_id.append(np.full(n, int(row["transit_id"]), dtype=np.int64))
         ccd_index.append(np.arange(n))
+        colour_factor.append(_row_array(row["colour_factor_al"]))
+        nu_eff_used.append(np.full(n, _row_scalar(row["nu_eff_used_in_astrometry"])))
+        nu_eff_error.append(np.full(n, _row_scalar(row["nu_eff_error"])))
 
     t_days = np.concatenate(t_days)
     psi_rad = np.concatenate(psi_rad)
@@ -158,6 +169,9 @@ def explode_transits(
     used = np.concatenate(used)
     transit_id = np.concatenate(transit_id)
     ccd_index = np.concatenate(ccd_index)
+    colour_factor = np.concatenate(colour_factor)
+    nu_eff_used = np.concatenate(nu_eff_used)
+    nu_eff_error = np.concatenate(nu_eff_error)
     n_ccd_total = t_days.size
 
     finite = (np.isfinite(t_days) & np.isfinite(psi_rad) & np.isfinite(w_mas)
@@ -176,6 +190,9 @@ def explode_transits(
         "parallax_factor_al": pf[keep],
         "transit_id": transit_id[keep],
         "ccd_index": ccd_index[keep],
+        "colour_factor_al": colour_factor[keep],
+        "nu_eff_used": nu_eff_used[keep],
+        "nu_eff_error": nu_eff_error[keep],
         "ra0_deg": float(np.nanmedian(np.asarray(rows["ra0"], dtype=float))),
         "dec0_deg": float(np.nanmedian(np.asarray(rows["dec0"], dtype=float))),
         "ref_epoch_days": REF_EPOCH_DAYS_J2010,

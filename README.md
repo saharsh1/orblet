@@ -108,7 +108,7 @@ truth, construct `OrbitSimulator(...)` directly and pass it as
 
 ## Tutorials on Gaia DR4 data
 
-`notebooks/tutorials/` is a three-part lesson on the public Gaia DR4
+`notebooks/tutorials/` is a four-part lesson on the public Gaia DR4
 pre-release epoch astrometry (ESA, June 2026; 12 sources, downloaded by the
 notebooks themselves into a git-ignored cache). Each notebook prints the
 model and its design matrix, fits in stages, and lists every parameter
@@ -121,6 +121,9 @@ against the published values:
    planet mass; emcee appendix.
 3. `03_dr4_bh3_joint_fit` — Gaia BH3 with the Gaia RVS radial velocities
    (VizieR): the joint astro-spectroscopic solution and the black-hole mass.
+4. `04_dr4_colour_term` — the colour term: the six-parameter solution of
+   LSPM J1324+6124, the orbit of Gaia-4 with a free colour, and Gaia BH3
+   (why the colour is fitted only with the right model).
 
 The notebooks need the `sampling` and `plots` extras and, for the third,
 `astroquery`.
