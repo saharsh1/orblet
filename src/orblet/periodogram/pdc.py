@@ -205,6 +205,9 @@ def pdc_false_alarm_probability(score, n: int):
 
         FAP(D) = P(χ²₁ > n·D + 1).
 
+    This is the form the PDC papers use in place of a permutation test
+    (Binnenfeld et al. 2023; 2024, eq. 9).
+
     Parameters
     ----------
     score : float or array
@@ -223,8 +226,14 @@ def pdc_false_alarm_probability(score, n: int):
     **Pointwise.**  This is the probability at ONE trial period.  Searching
     a grid of periods and reporting the best one is not corrected for (no
     look-elsewhere factor); the chance that some period in the grid beats
-    a threshold is larger.  A scramble null over the same epochs is the
-    calibrated alternative.
+    a threshold is larger.  For the best peak of a grid use
+    :func:`pdc_grid_false_alarm_probability` (analytical) or
+    :func:`pdc_scramble_false_alarm_probability` (a scramble null over the
+    same epochs).
+
+    **Independent rows.**  ``n`` must count independent measurements.
+    Per-CCD astrometric lines of one transit that share an error are not
+    independent, and the result is then too small.
 
     **Partial PDC.**  The approximation is derived for the ordinary
     distance correlation; applying it to the partial (semi-partial) score

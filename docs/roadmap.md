@@ -127,6 +127,8 @@ and Vehtari et al. 2021 for R-hat; emcee; the Gaia NSS conventions the
 | `scan_angle_coupling` | D_cpl |
 | `spectral_distance_matrix` | the chord distance between spectra |
 | `pdc_false_alarm_probability` | Shen, Panda & Vogelstein 2022 |
+| `pdc_grid_false_alarm_probability` | the number of independent frequencies (Horne & Baliunas 1986) |
+| `pdc_scramble_false_alarm_probability` | the permutation test and its p-value (1 + k)/(1 + K) (e.g. Phipson & Smyth 2010) |
 | uncertainty-aware distance (item 5) | "PDC with errors" |
 | `compute_lomb_scargle_periodogram` | Lomb; Scargle; astropy's implementation |
 

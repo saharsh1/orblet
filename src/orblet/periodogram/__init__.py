@@ -5,6 +5,7 @@ Two periodograms and what they need:
     lomb_scargle   Lomb–Scargle on epoch radial velocities
     pdc            the phase distance correlation (PDC) periodogram
     distances      the distance matrices PDC compares, one per data type
+    false_alarm    false-alarm probability of the best PDC peak over a grid
     dcor           unbiased distance correlation, the statistic under PDC
     coupling       how strongly a source's astrometry depends on scan angle
     peaks          measurements on a periodogram peak
@@ -24,6 +25,10 @@ from orblet.periodogram.distances import (
 )
 from orblet.periodogram.lomb_scargle import compute_lomb_scargle_periodogram
 from orblet.periodogram.pdc import compute_pdc_periodogram, pdc_false_alarm_probability
+from orblet.periodogram.false_alarm import (
+    pdc_grid_false_alarm_probability,
+    pdc_scramble_false_alarm_probability,
+)
 from orblet.periodogram.peaks import peak_fwhm_days
 
 __all__ = [
@@ -32,6 +37,8 @@ __all__ = [
     "compute_pdc_periodogram",
     "distance_correlation",
     "pdc_false_alarm_probability",
+    "pdc_grid_false_alarm_probability",
+    "pdc_scramble_false_alarm_probability",
     "peak_fwhm_days",
     "scalar_distance_matrix",
     "scan_angle_coupling",
