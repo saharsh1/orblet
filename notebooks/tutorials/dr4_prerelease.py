@@ -1,8 +1,8 @@
 """Helpers for the Gaia DR4 pre-release tutorials.
 
-Tutorial 01 builds every function here step by step in its own cells.
-Tutorials 02 and 03 import them from this file so they can start at the
-fit.  The code is the same; the docstrings here are the reference.
+The four tutorials import these functions from this file, so that the
+reader exists once.  Tutorial 01 explains the steps of
+:func:`explode_transits`; the docstrings here are the reference.
 
 This is pipeline code (archive table -> orblet input dict).  It lives
 beside the notebooks on purpose: orblet itself does not know what a Gaia
@@ -39,20 +39,33 @@ NS_PER_DAY = 86400.0e9
 #: Names of the ten CCD slots in each per-transit array.
 CCD_NAMES = ["SM"] + [f"AF{i}" for i in range(1, 10)]
 
-#: The 12 pre-release sources (ESA page).  Approximate G and parallax.
+#: The 12 pre-release sources (ESA page): name (None: no name), group,
+#: approximate G and parallax, and a one-line note.
 SOURCES = {
-    4181040337841125632: dict(name="HD 183633", group="parallax", g_mag=9.0, plx_mas=1.0),
-    3926186255616949504: dict(name=None, group="parallax", g_mag=19.0, plx_mas=1.0),
-    435469040545191680: dict(name=None, group="parallax", g_mag=14.0, plx_mas=1.0),
-    1663617687609809280: dict(name="LSPM J1324+6124", group="magnitude", g_mag=14.3, plx_mas=10.1),
-    2309425390592896: dict(name=None, group="magnitude", g_mag=14.0, plx_mas=0.9),
-    20694084440761600: dict(name=None, group="magnitude", g_mag=14.1, plx_mas=4.9),
-    2237987199365376: dict(name=None, group="qso", g_mag=19.8, plx_mas=0.0),
-    60730287810150016: dict(name=None, group="qso", g_mag=20.1, plx_mas=0.0),
-    10973744521070720: dict(name=None, group="qso", g_mag=19.9, plx_mas=0.0),
-    3937211745905473024: dict(name="HD 114762", group="orbit", g_mag=7.2, plx_mas=25.6),
-    1457486023639239296: dict(name="Gaia-4", group="orbit", g_mag=11.9, plx_mas=13.6),
-    4318465066420528000: dict(name="Gaia BH3", group="orbit", g_mag=11.2, plx_mas=2.0),
+    4181040337841125632: dict(name="HD 183633", group="parallax", g_mag=9.0, plx_mas=1.0,
+        note="parallax ~1 mas, G 9"),
+    3926186255616949504: dict(name=None, group="parallax", g_mag=19.0, plx_mas=1.0,
+        note="parallax ~1 mas, G 19"),
+    435469040545191680: dict(name=None, group="parallax", g_mag=14.0, plx_mas=1.0,
+        note="parallax ~1 mas, G 14"),
+    1663617687609809280: dict(name="LSPM J1324+6124", group="magnitude", g_mag=14.3, plx_mas=10.1,
+        note="G 14, parallax ~10 mas"),
+    2309425390592896: dict(name=None, group="magnitude", g_mag=14.0, plx_mas=0.9,
+        note="G 14, parallax ~1 mas"),
+    20694084440761600: dict(name=None, group="magnitude", g_mag=14.1, plx_mas=4.9,
+        note="G 14, parallax ~5 mas"),
+    2237987199365376: dict(name=None, group="qso", g_mag=19.8, plx_mas=0.0,
+        note="quasar (CRF3)"),
+    60730287810150016: dict(name=None, group="qso", g_mag=20.1, plx_mas=0.0,
+        note="quasar (CRF3)"),
+    10973744521070720: dict(name=None, group="qso", g_mag=19.9, plx_mas=0.0,
+        note="quasar (CRF3)"),
+    3937211745905473024: dict(name="HD 114762", group="orbit", g_mag=7.2, plx_mas=25.6,
+        note="orbit: brown-dwarf companion"),
+    1457486023639239296: dict(name="Gaia-4", group="orbit", g_mag=11.9, plx_mas=13.6,
+        note="orbit: planet Gaia-4 b"),
+    4318465066420528000: dict(name="Gaia BH3", group="orbit", g_mag=11.2, plx_mas=2.0,
+        note="orbit: dormant black hole"),
 }
 
 

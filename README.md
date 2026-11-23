@@ -125,6 +125,9 @@ against the published values:
    LSPM J1324+6124, the orbit of Gaia-4 with a free colour, and Gaia BH3
    (why the colour is fitted only with the right model).
 
+All four read the file with `notebooks/tutorials/dr4_prerelease.py`, so
+the reader exists once.
+
 The notebooks need the `sampling` and `plots` extras and, for the third,
 `astroquery`.
 
