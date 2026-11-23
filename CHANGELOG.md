@@ -4,6 +4,75 @@ orblet follows semantic versioning. While the version is 0.x, a change to
 the public surface (a name added, moved or removed, a convention changed) is
 a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
+## 0.4.0 — 2026-11-23
+
+A minor release: names added to the public surface. No existing number
+moves.
+
+**False-alarm probability of the best PDC peak over the whole period
+grid.** `pdc_false_alarm_probability` is pointwise (one trial period). Two
+new names in `orblet.periodogram` (module `periodogram/false_alarm.py`)
+correct for the search over the grid:
+
+- `pdc_grid_false_alarm_probability(score, n, periods_days, span_days)`:
+  fast, 1 − (1 − p)^N_eff with N_eff = T · (f_max − f_min). For the
+  ordinary PDC of RVs. Not for the partial PDC of per-CCD astrometry.
+- `pdc_scramble_false_alarm_probability(t_days, periods_days, obs_dist, *,
+  n_copies, rng, nuisance_dist=None, partial_mode="none", groups=None)`:
+  a permutation null. Each copy moves whole groups (transits) of rows,
+  with their scan angles, to the times of other groups. The copies are
+  computed from group-by-group sums, so 200 copies on 60 transits cost
+  less than one periodogram.
+- No existing number moves: the arithmetic of `pdc.py` is unchanged.
+
+**The colour term of Gaia DR4 epoch astrometry in the linear astrometric
+solves.** The published along-scan position was measured with an assumed
+effective wavenumber ν_used; for a source of effective wavenumber ν,
+`w_pub = model + s · colour_factor_al · (ν − ν_used)`.
+
+- New keyword `colour=` on `fit_astrometric_5param`,
+  `best_linear_params_ti`, `scan_ti_frequency` and
+  `presearch_astrometry_linear_ti`, with the new class `ColourTerm`:
+  `ColourTerm("fixed", nu_eff=ν)` moves the data to a colour you give;
+  `ColourTerm("free")` solves the colour as one more linear amplitude
+  (column `d_nu_eff`, µm⁻¹, after the existing columns: 6 single-star
+  columns, 10 Thiele–Innes columns); `prior_sigma=` adds a Gaussian prior
+  on the colour alone. `DPAC_COLOUR_PRIOR_SIGMA = 0.085` µm⁻¹ is the width
+  that reproduces Gaia's six-parameter solutions. The scans take a free
+  colour with a flat prior only.
+- Inputs: the optional keys `colour_factor_al` (mas·µm), `nu_eff_used`
+  (µm⁻¹) and `nu_eff_error` (µm⁻¹) of the astrometry dict, one value per
+  row; the same names as array keywords of `best_linear_params_ti` and
+  `scan_ti_frequency`.
+- New names: `colour_columns`, `ColourBlockBuilder`,
+  `COLOUR_FACTOR_AL_SIGN` (−1; fixed by the public DR4 pre-release data),
+  `ColourTerm`, `DPAC_COLOUR_PRIOR_SIGMA`, `PrecisionPrior`.
+- `Astrometric5ParamSolution` and `TiBestLinearParams` gain the fields
+  `nu_eff`, `nu_eff_error`, `colour_mode` (all `None` without a colour
+  term).
+- `linear_solve_ti` accepts a `beta_prior` with `.precision` in place of
+  `.cov` (`PrecisionPrior`): the precision may be singular, which is a
+  prior on some amplitudes only; `log_evidence` is then `None`.
+- Not included: the samplers, `likelihood.py`, the joint fits and the
+  chain exports (nine columns, no colour term); a colour that changes with
+  time; the across-scan direction.
+- Without `colour=`, every result is the same byte for byte; every
+  baseline is unchanged.
+- New tutorial `notebooks/tutorials/04_dr4_colour_term.ipynb` (LSPM
+  J1324+6124, Gaia-4, Gaia BH3 on the public pre-release data) and a
+  colour part in `notebooks/quickstart/02_design_matrices_and_linear_solves.ipynb`.
+  The tutorial reader `dr4_prerelease.explode_transits` also returns
+  `colour_factor_al`, `nu_eff_used` and `nu_eff_error`.
+
+**Several RV instruments: a documented pattern, no new name.** A fit with
+one zero point and one jitter per instrument works with the existing atoms:
+the design `[γ, C, S]` plus one 0/1 column per instrument other than the
+reference (`concat_columns`), per-row errors that carry the jitter, and one
+`loglike` call per instrument, added. New test
+`tests/test_rv_several_instruments.py`, new example
+`notebooks/fitting_examples/fit_rv_several_instruments.ipynb`, and the
+pattern in §2.2 of the reference manual. No signature changed.
+
 ## 0.3.0 — 2026-11-21
 
 A minor release: names removed from the public surface, and one deliberate
