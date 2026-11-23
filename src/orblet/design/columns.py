@@ -1,6 +1,6 @@
 """The design-matrix COLUMN functions — the arithmetic behind the builders.
 
-The seven functions every design in orblet is assembled from:
+The eight functions every design in orblet is assembled from:
 
 ============================== ================================
 function                       what it builds
@@ -8,14 +8,16 @@ function                       what it builds
 ``astrometric_columns``        the five single-star columns
 ``acceleration_columns``       the two sky-plane acceleration columns
 ``colour_columns``             the one colour (effective-wavenumber) column
+``rv_offset_columns``          the RV zero-point columns of several instruments
 ``ti_design_matrix``           the nine Thiele-Innes columns
 ``rv_design_matrix``           the three linear RV columns
 ``reduced_rv_design``          the reduced joint RV design
 ``reduced_astro_design``       the reduced joint astrometric design
 ============================== ================================
 
-Three of the six (``acceleration_columns``, ``ti_design_matrix``,
-``rv_design_matrix``) are PUBLIC names on orblet's front door; that the
+Five of the eight (``acceleration_columns``, ``colour_columns``,
+``rv_offset_columns``, ``ti_design_matrix``, ``rv_design_matrix``) are
+PUBLIC names on orblet's front door; that the
 front-door name is the same OBJECT as the one defined here is pinned by
 the front-door identity test.
 
@@ -64,6 +66,8 @@ Conventions pinned here (documented, do NOT reorder)
 - colour block, 1 column: ``[d_nu_eff]``, always AFTER the other columns
 - RV design, 3 columns: ``[γ, K cos ω, K sin ω]``
 - reduced RV design, 2 columns: ``[γ, K]`` at FIXED ω
+- RV zero-point block, m − 1 columns: one 0/1 column per instrument other
+  than the reference (instrument 0), always AFTER the RV orbit columns
 - proper motion is linear in ``Δt_yr = (t − epoch_ref_mjd) /
   DAYS_PER_KEPLER_YEAR``; ``epoch_ref_mjd`` and ``t_mjd`` MUST share one
   time scale (Gaia DR4: TCB)
@@ -496,4 +500,90 @@ def colour_columns(colour_factor_al: np.ndarray) -> np.ndarray:
         raise ValueError(_COLOUR_FACTOR_SHAPE_MSG)
     block = np.empty((factor.shape[0], 1), dtype=float)
     block[:, 0] = COLOUR_FACTOR_AL_SIGN * factor   # the one column, ∂w/∂ν
+    return block
+
+
+# ── RV zero-point columns: one per instrument other than the reference ──
+
+_OFFSET_INDEX_MSG = (
+    "instrument_index must be a 1-D array of integers (one per row), each "
+    "in 0 .. n_instruments - 1."
+)
+_OFFSET_COUNT_MSG = "n_instruments must be None or a positive integer."
+_OFFSET_EMPTY_MSG = (
+    "every instrument 0 .. n_instruments - 1 needs at least one row: an "
+    "instrument with no row gives an empty column (a singular design)."
+)
+
+
+def rv_offset_columns(
+    instrument_index: np.ndarray,
+    n_instruments: int | None = None,
+) -> np.ndarray:
+    """Zero-point columns of RVs from several instruments, shape ``(n, m − 1)``.
+
+    Each instrument has its own zero point.  Instrument 0 is the reference:
+    its zero point is the ``γ`` column of the RV design (full ``[γ, C, S]``
+    or reduced ``[γ, K]``).  For each other instrument j the model adds
+
+        v_row += Δγ_j   on the rows of instrument j,
+
+    with Δγ_j = γ_j − γ_0.  The column of Δγ_j is therefore 1 on the rows
+    of instrument j and 0 elsewhere.  The block goes AFTER the orbit
+    columns, joined with :func:`orblet.design.concat_columns`; it does not
+    depend on the orbit shape, so the same block serves the full and the
+    reduced design.
+
+    Inputs
+    ------
+    instrument_index : np.ndarray
+        The instrument number of each row, integers, shape ``(n,)``.  0 is
+        the reference instrument.
+    n_instruments : int or None
+        The number of instruments m.  ``None``: the largest number in
+        ``instrument_index`` plus 1.
+
+    Returns
+    -------
+    np.ndarray
+        ``(n, m − 1)`` float64, C-contiguous; column ``j − 1`` is the 0/1
+        indicator of instrument j.  With one instrument the block has no
+        column, ``(n, 0)``.  The amplitude of a column is in km/s.
+
+    Raises
+    ------
+    ValueError
+        When an index is not an integer or is out of range, or when an
+        instrument (the reference included) has no row: its column would be
+        empty, or the reference rows would be absent and the columns would
+        sum to the ``γ`` column; either design is singular.
+    """
+    # step 1, the indices: a 1-D array of integers (not booleans)
+    index = np.asarray(instrument_index)
+    integer_kind = index.dtype.kind in ("i", "u")
+    if index.ndim != 1 or index.shape[0] == 0 or not integer_kind:
+        raise ValueError(_OFFSET_INDEX_MSG)
+
+    # step 2, the number of instruments m
+    if n_instruments is None:
+        n_instruments = int(index.max()) + 1
+    elif (
+        isinstance(n_instruments, bool)
+        or not isinstance(n_instruments, (int, np.integer))
+        or int(n_instruments) < 1
+    ):
+        raise ValueError(_OFFSET_COUNT_MSG)
+    n_instruments = int(n_instruments)
+    if index.min() < 0 or index.max() >= n_instruments:
+        raise ValueError(_OFFSET_INDEX_MSG)
+
+    # step 3, every instrument has a row (the reference too)
+    rows_per_instrument = np.bincount(index, minlength=n_instruments)
+    if np.any(rows_per_instrument == 0):
+        raise ValueError(_OFFSET_EMPTY_MSG)
+
+    # step 4, one 0/1 column per instrument 1 .. m − 1
+    block = np.zeros((index.shape[0], n_instruments - 1), dtype=float)
+    for instrument in range(1, n_instruments):
+        block[:, instrument - 1] = index == instrument   # 1 on its rows
     return block

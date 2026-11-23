@@ -50,8 +50,10 @@ separate `amrf-triage` package).
 | name | import from | what it does | units | assumptions |
 |---|---|---|---|---|
 | `rv_design_matrix` | `orblet` | columns [1, cos ν + e, −sin ν] at a fixed (P, e, τ) | P Keplerian years | linear in (γ, K cos ω, K sin ω) |
+| `rv_offset_columns`, `RvOffsetBuilder` | `orblet` | RVs of several instruments: one 0/1 column per instrument other than the reference (instrument 0), placed after the orbit columns (full or reduced design) | amplitude Δγ_j = γ_j − γ_0 in km/s | every instrument needs a row; the jitter of an instrument goes into its row errors |
 | `linear_solve_rv` | `orblet` | generalised least squares for the three RV amplitudes | km/s | `logL_marginal` is the flat-prior marginal likelihood from the data alone, on every path (None if the data-only matrix is singular); `log_evidence` is the prior-weighted integral, only with a prior; sum the same kind across channels, never mix them |
 | `best_linear_params_rv` | `orblet` | the RV solve at a shape, with optional covariance-correct draws | P days | jitter fixed |
+| `draw_linear_amplitudes` | `orblet` | samples of N(β̂, inflate · cov) from a linear solution (`.beta`, `.cov`): the draw of `best_linear_params_rv`, for a solve with any columns | units of the amplitudes | conditional on the fixed noise; `rng` a Generator or an integer seed |
 | `recover_K`, `recover_omega` | `orblet` | K = √(C² + S²), ω = atan2(S, C) | km/s, rad | primary-frame ω |
 | `semi_amplitude_kms` | `orblet` | K for given masses and period, edge-on | km/s | multiply by sin i |
 | `ti_design_matrix` | `orblet` | nine columns [A, B, F, G, Δα*, Δδ, μα*, μδ, ϖ] at a fixed shape | mas | uses the bundled parallax factor |

@@ -4,6 +4,36 @@ orblet follows semantic versioning. While the version is 0.x, a change to
 the public surface (a name added, moved or removed, a convention changed) is
 a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
+## Unreleased
+
+A minor release: names added to the public surface. No existing number
+moves.
+
+**RVs of several instruments: the zero-point columns.** One 0/1 column per
+instrument other than the reference (instrument 0); its amplitude is the
+zero point of that instrument minus the reference's, in km/s. The block
+goes after the orbit columns of the full design `[γ, C, S]` or the reduced
+design `[γ, K]`.
+
+- `rv_offset_columns(instrument_index, n_instruments=None)` in
+  `design/columns.py`: shape `(n, m − 1)`; raises when an instrument (the
+  reference included) has no row, since the design would be singular.
+- `RvOffsetBuilder(instrument_names)` in `design/builder.py`: the same
+  block, with the column names `offset_<name>` and the unit km/s.
+- The several-instruments test and example notebook use them.
+
+**A draw of the linear amplitudes.** `draw_linear_amplitudes(solution,
+n_draws, rng, *, inflate=1.0)` in `solve/rv.py` returns samples of
+N(β̂, inflate · cov) from any linear solution (`.beta`, `.cov`), for a
+design with any number of columns. `rng` is a numpy Generator or an
+integer seed. `best_linear_params_rv(draw=N, seed=s)` now draws through
+it; its numbers are bit for bit those of 0.4.0.
+
+**Tests.** The baseline cases that go through a BLAS matrix product are
+skipped when numpy rounds such a product differently from the OpenBLAS
+build the baselines were made with (Apple Accelerate in the PyPI wheel on
+macOS arm64): 5 Lomb–Scargle power and 8 parallax-factor cases.
+
 ## 0.4.0 — 2026-11-23
 
 A minor release: names added to the public surface. No existing number

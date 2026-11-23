@@ -59,6 +59,7 @@ from orblet.design.columns import (
     reduced_astro_design,
     reduced_rv_design,
     rv_design_matrix,
+    rv_offset_columns,
     ti_design_matrix,
 )
 
@@ -69,6 +70,10 @@ _NAMES_UNITS_LENGTH_MSG = (
 )
 _CONCAT_EMPTY_MSG = "concat_columns requires at least one column block."
 _CONCAT_ROWS_MSG = "all column blocks must share the same number of rows."
+_OFFSET_NAMES_MSG = (
+    "instrument_names must be a sequence of at least one distinct, "
+    "non-empty text name; the first is the reference instrument."
+)
 
 
 @runtime_checkable
@@ -394,6 +399,49 @@ class ColourBlockBuilder:
     def build(self, colour_factor_al: np.ndarray) -> np.ndarray:
         """Return the ``(n, 1)`` colour block (delegates)."""
         return colour_columns(colour_factor_al)
+
+
+class RvOffsetBuilder:
+    """The RV zero-point block of several instruments: one column per
+    instrument other than the reference.
+
+    Delegates to :func:`.columns.rv_offset_columns`.  The instruments are
+    named at construction, in number order; the first is the reference,
+    whose zero point is the ``γ`` column of the orbit design.  The column of
+    instrument j is named ``"offset_<name j>"``; its amplitude is
+    γ_j − γ_0 in km/s.  The block goes AFTER the orbit columns
+    (:class:`RvOrbitBuilder` or :class:`JointReducedRvBuilder`).
+    Orbit-shape-INDEPENDENT: ``build`` takes only the instrument number of
+    each row.  With one instrument the block has no column.
+    """
+
+    def __init__(self, instrument_names) -> None:
+        # step 1, the names: text, distinct, at least one
+        names = tuple(instrument_names)
+        all_text = all(isinstance(name, str) and name != "" for name in names)
+        if len(names) == 0 or not all_text or len(set(names)) != len(names):
+            raise ValueError(_OFFSET_NAMES_MSG)
+        self.instrument_names: tuple[str, ...] = names
+        # step 2, one column per instrument after the first (the reference)
+        other_names = names[1:]
+        self.column_names: tuple[str, ...] = tuple(
+            "offset_" + name for name in other_names
+        )
+        self.column_units: tuple[str, ...] = ("km/s",) * len(other_names)
+
+    @property
+    def n_col(self) -> int:
+        return len(self.column_names)
+
+    def build(self, instrument_index: np.ndarray) -> np.ndarray:
+        """Return the ``(n, m − 1)`` zero-point block (delegates).
+
+        ``instrument_index``: the instrument number of each row, integers
+        in ``0 .. m − 1``, where m is the number of names.
+        """
+        return rv_offset_columns(
+            instrument_index, n_instruments=len(self.instrument_names),
+        )
 
 
 class RelativeTiBuilder:

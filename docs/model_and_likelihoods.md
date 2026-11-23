@@ -50,11 +50,11 @@ in three different units depending on where you look:
 | layer | unit | anchor |
 | --- | --- | --- |
 | forward models (`period_yr`) | Keplerian **years** | `rv_curve`, `model.py:197`; `kepler_xy_orbit`, `model.py:389` |
-| **RV** design matrix (`period_yr`) | Keplerian **years** | `rv_design_matrix`, `design/columns.py:160` |
-| `best_linear_params_rv` | **days** | `solve/rv.py:493` |
+| **RV** design matrix (`period_yr`) | Keplerian **years** | `rv_design_matrix`, `design/columns.py:164` |
+| `best_linear_params_rv` | **days** | `solve/rv.py:581` |
 | **TI** design matrix, `best_linear_params_ti`, `scan_ti_frequency` | `f_per_day` = cycles per **DAY** | `solve/astrometry.py:949`, `search.py:433` |
 | the default period prior | **days** | `default_companion_priors`, `priors.py:541` |
-| the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:647` |
+| the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:734` |
 
 ⚠️ **A silent factor-365.25 trap lives in this table.** The RV design matrix
 takes **years** while `best_linear_params_rv` takes **days**, and the seed
@@ -253,7 +253,7 @@ shape `(P, e, τ)`:
 v = γ·1  +  (K cos ω)·(cos ν + e)  +  (K sin ω)·(−sin ν)
 ```
 
-so the design matrix is (`rv_design_matrix`, `design/columns.py:160`,
+so the design matrix is (`rv_design_matrix`, `design/columns.py:164`,
 public as `orblet.rv_design_matrix`):
 
 ```
@@ -272,13 +272,15 @@ K = √(C² + S²)              ω = atan2(S, C) ∈ (−π, π]
 `recover_omega` (`solve/rv.py:378-406`).
 
 **Several instruments.** Each instrument (a set of RVs) has its own zero
-point and its own jitter. No function takes several sets; the pattern uses
-the atoms as they are, and `tests/test_rv_several_instruments.py` holds it
-(example: `notebooks/fitting_examples/fit_rv_several_instruments.ipynb`):
+point and its own jitter. The atoms below do it, and
+`tests/test_rv_several_instruments.py` holds the pattern (example:
+`notebooks/fitting_examples/fit_rv_several_instruments.ipynb`):
 
 - **Linear layer.** Stack the rows of all sets. The design is the three
   columns above, plus **one 0/1 column per set other than the reference
-  set** (1 on the rows of that set), joined with `concat_columns`. `γ` is
+  set** (1 on the rows of that set): `rv_offset_columns(instrument_index)`
+  or `RvOffsetBuilder(names).build(instrument_index)`, joined with
+  `concat_columns`. The same block goes after the reduced design `[γ, K]`. `γ` is
   then the zero point of the reference set, and the amplitude of a 0/1
   column is the zero point of its set minus the reference's.
   `linear_solve_rv` reads the number of columns from the design;
@@ -290,6 +292,10 @@ the atoms as they are, and `tests/test_rv_several_instruments.py` holds it
   `jitter_kms`; the likelihood of several sets is one call per set, added.
 - ⚠️ **Refine the shape before you read the zero points.** On a coarse
   `(P, e, τ)` grid the 0/1 columns absorb part of the shape error.
+- **Draws.** `draw_linear_amplitudes(solution, n_draws, rng)` samples all
+  amplitudes, zero points included, from `N(β̂, cov)` at the fixed shape and
+  jitters; `best_linear_params_rv(draw=N, seed=s)` gives the same numbers
+  through it.
 - `best_linear_params_rv`, `compose_rv_seed` and `loglike_joint` take one
   set only.
 
@@ -452,7 +458,7 @@ so, combined with §3.1, `w = (B X + G Y) sin ψ + (A X + F Y) cos ψ`.
 
 ### 3.3 The design matrix
 
-`ti_design_matrix`, `design/columns.py:374`, public as
+`ti_design_matrix`, `design/columns.py:378`, public as
 `orblet.ti_design_matrix`. **Nine columns**, in this fixed order
 (`_BETA_COLUMNS`, `solve/astrometry.py:117`):
 
@@ -773,7 +779,7 @@ seed   = compose_rv_seed(ql, prepared, epoch_ref_mjd=EPOCH_REF)               # 
 run    = run_emcee_chains(log_post_all, ..., draw_init_fn=from_seed(seed))    # 3. refine, jitter freed  (fit_rv_orbit_all_parameters.ipynb)
 ```
 
-`compose_rv_seed` (`solve/rv.py:647`) returns `P_yr` (years — the
+`compose_rv_seed` (`solve/rv.py:734`) returns `P_yr` (years — the
 sampler's own key; the linear core and `best_linear_params_rv` take days),
 `e`, `omega_rad` (primary frame), `tau`, `K_kms`, `offset_kms`,
 `epoch_ref_mjd`; `jitter_kms` optional (no quick-look source → each chain
@@ -821,13 +827,13 @@ return it as `logL_marginal` — evaluated on whichever design matrix the rung
 leaves linear.
 
 At **rung 1** the designs are the full ones of §2 and §3: `rv_design_matrix`
-(`design/columns.py:160`), three columns, and `ti_design_matrix`
-(`design/columns.py:374`), nine.
+(`design/columns.py:164`), three columns, and `ti_design_matrix`
+(`design/columns.py:378`), nine.
 
 At **rung 2** the orientation is sampled, so what is left linear shrinks.
-`reduced_rv_design` (`design/columns.py:218`) has two columns, because `ω`
+`reduced_rv_design` (`design/columns.py:222`) has two columns, because `ω`
 is no longer the RV solve's to choose; `reduced_astro_design`
-(`design/columns.py:248`) has six, because with `(ω, Ω, i)` fixed the four
+(`design/columns.py:252`) has six, because with `(ω, Ω, i)` fixed the four
 Thiele-Innes constants are all one scale times a known direction:
 
 ```
@@ -952,7 +958,7 @@ fit run past that point yields an uninterpretable `D`); rung 2 refines the
 geometry from rung 1's median shape, with `ω` from the RV solve and
 `(Ω, i)` from the Thiele-Innes inversion; rung 3 starts from rung 2's median
 geometry with the amplitudes solved there. The composers for the single
-channels are atoms too: `compose_rv_seed` (`solve/rv.py:647`) and
+channels are atoms too: `compose_rv_seed` (`solve/rv.py:734`) and
 `compose_ti_seed` (`search.py:227`).
 
 **A seed is initialisation, never a prior — also across rungs on the same
@@ -1284,20 +1290,20 @@ fixed is out of this list; the code and the tests are the record.
 | quantity | computed in | shown in |
 | --- | --- | --- |
 | RV curve | `rv_curve`, `model.py:197` | `01_forward_models_and_simulation`, `fit_rv_orbit*` |
-| RV design matrix | `rv_design_matrix`, `design/columns.py:160` | `02_design_matrices_and_linear_solves` |
+| RV design matrix | `rv_design_matrix`, `design/columns.py:164` | `02_design_matrices_and_linear_solves` |
 | RV likelihood | `loglike`, `likelihood.py:93` | `fit_rv_orbit_all_parameters` |
 | RV marginal evidence | `linear_solve_rv`, `solve/rv.py:175` | `02_design_matrices_and_linear_solves`, `fit_rv_orbit` |
 | mass function | `fm_from_K`, `model.py:63` | `04_interpretation_mass` |
 | along-scan model | `along_scan_model`, `model.py:580` | `01_forward_models_and_simulation`, `fit_astrometric_orbit` |
 | Thiele-Innes constants | `campbell_xy`, `model.py:474` (`_ti_constants_unit`, `:420`) | `fit_joint_orbit` |
-| TI design matrix | `ti_design_matrix`, `design/columns.py:374` | `02_design_matrices_and_linear_solves` |
-| colour column | `colour_columns`, `design/columns.py:462` | — |
+| TI design matrix | `ti_design_matrix`, `design/columns.py:378` | `02_design_matrices_and_linear_solves` |
+| colour column | `colour_columns`, `design/columns.py:466` | — |
 | single-star solve | `fit_astrometric_5param`, `solve/astrometry.py:1158` | `02_design_matrices_and_linear_solves`, `03_period_search` |
 | astro likelihood | `loglike_along_scan`, `likelihood.py:182` | `fit_joint_orbit` |
 | TI marginal evidence | `linear_solve_ti`, `solve/astrometry.py:376` | `02_design_matrices_and_linear_solves`, `fit_astrometric_orbit` |
-| reduced joint designs | `reduced_rv_design`, `design/columns.py:218`; `reduced_astro_design`, `:248` | `fit_joint_orbit` |
+| reduced joint designs | `reduced_rv_design`, `design/columns.py:222`; `reduced_astro_design`, `:248` | `fit_joint_orbit` |
 | frequency scan | `scan_ti_frequency`, `search.py:433` | `03_period_search`, `fit_astrometric_orbit` |
-| seeds | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:647` | `fit_astrometric_orbit`, `fit_rv_orbit` |
+| seeds | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:734` | `fit_astrometric_orbit`, `fit_rv_orbit` |
 | chains | `run_emcee_chains`, `sampling.py:110`; `rhat_per_param`, `:64` | `fit_rv_orbit_all_parameters`, `fit_joint_orbit` |
 | companion mass | `solve_companion_mass`, `interpret/companion_mass.py:223` | `04_interpretation_mass` |
 | astrometric upper limit | `astrometric_upper_limit_au`, `interpret/astrometric_upper_limit.py:151` | `04_interpretation_mass` |

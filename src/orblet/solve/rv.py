@@ -420,6 +420,94 @@ def recover_omega(beta: np.ndarray) -> float:
     return float(np.arctan2(beta[2], beta[1]))
 
 
+# ── Draws of the linear amplitudes from a solution ──────────────────────
+
+_DRAW_SOLUTION_MSG = (
+    "solution must expose 'beta' (shape (k,)) and 'cov' (shape (k, k))."
+)
+_DRAW_COUNT_MSG = "n_draws must be a positive integer."
+_DRAW_RNG_MSG = "rng must be a numpy Generator or an integer seed."
+_DRAW_INFLATE_MSG = "inflate must be a positive finite number."
+
+
+def draw_linear_amplitudes(
+    solution,
+    n_draws: int,
+    rng,
+    *,
+    inflate: float = 1.0,
+) -> np.ndarray:
+    """Draw the linear amplitudes of a solve from their Gaussian posterior.
+
+    At a fixed orbit shape the amplitudes β of a linear solve have the
+    Gaussian posterior N(β̂, cov), conditional on the fixed noise.  This
+    returns ``n_draws`` samples of N(β̂, inflate · cov), with the FULL
+    covariance (the correlations between columns are kept).  The draw is
+    ``rng.multivariate_normal(β̂, inflate · cov, size=n_draws)``; with
+    ``rng`` the integer ``seed`` it gives the same numbers as
+    ``best_linear_params_rv(..., draw=n_draws, seed=seed)``.
+
+    It reads only ``.beta`` and ``.cov``, so it takes the result of
+    :func:`linear_solve_rv` with any number of columns (zero-point columns
+    of several instruments included), and a result of the astrometric
+    linear solve.
+
+    Inputs
+    ------
+    solution : object with ``.beta`` and ``.cov``
+        β̂, shape ``(k,)``, and its covariance, shape ``(k, k)``, in the
+        units of the amplitudes (km/s for RV).
+    n_draws : int
+        The number of samples, ≥ 1.
+    rng : numpy.random.Generator or int
+        The random generator.  An integer makes a new generator,
+        ``numpy.random.default_rng(rng)``; a Generator is used as given (it
+        advances).
+    inflate : float, optional
+        A factor on the covariance, > 0.  1 (default) is the exact
+        conditional posterior; > 1 widens it, for example for a starting
+        point of a fit that also samples the jitter.
+
+    Returns
+    -------
+    np.ndarray
+        Shape ``(n_draws, k)``, in the units of the amplitudes; row i is
+        one draw, column j the amplitude of design column j.
+    """
+    # step 1, the solution: a vector beta and a square cov of its size
+    if not (hasattr(solution, "beta") and hasattr(solution, "cov")):
+        raise ValueError(_DRAW_SOLUTION_MSG)
+    beta = np.asarray(solution.beta, dtype=float)
+    cov = np.asarray(solution.cov, dtype=float)
+    if beta.ndim != 1 or cov.shape != (beta.shape[0], beta.shape[0]):
+        raise ValueError(_DRAW_SOLUTION_MSG)
+
+    # step 2, the count and the inflation
+    if (
+        isinstance(n_draws, bool)
+        or not isinstance(n_draws, (int, np.integer))
+        or int(n_draws) <= 0
+    ):
+        raise ValueError(_DRAW_COUNT_MSG)
+    if isinstance(inflate, bool) or not (
+        np.isfinite(inflate) and float(inflate) > 0.0
+    ):
+        raise ValueError(_DRAW_INFLATE_MSG)
+
+    # step 3, the generator: as given, or a new one from an integer seed
+    if isinstance(rng, np.random.Generator):
+        generator = rng
+    elif isinstance(rng, (int, np.integer)) and not isinstance(rng, bool):
+        generator = np.random.default_rng(int(rng))
+    else:
+        raise ValueError(_DRAW_RNG_MSG)
+
+    # step 4, the draw from N(beta, inflate · cov)
+    return generator.multivariate_normal(
+        beta, float(inflate) * cov, size=int(n_draws),
+    )
+
+
 # ── Best linear params at a shape (+ optional correlated seed draws) ──
 #
 # Value-free error messages: no input value / source identifier is
@@ -612,9 +700,8 @@ def best_linear_params_rv(
     # sampler's post-hoc conditional draw (so inflate=1 is that draw).
     draws = None
     if draw is not None:
-        rng = np.random.default_rng(int(seed))
-        draws = rng.multivariate_normal(
-            sol.beta, float(inflate) * sol.cov, size=int(draw),
+        draws = draw_linear_amplitudes(
+            sol, int(draw), int(seed), inflate=float(inflate),
         )
 
     return RvBestLinearParams(

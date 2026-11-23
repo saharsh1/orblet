@@ -2,10 +2,10 @@
 A radial-velocity fit with several instruments, from the existing atoms.
 
 Each instrument (a "set" of RVs) has its own zero point and its own extra
-noise (jitter).  No function of orblet takes several sets; the pattern is:
+noise (jitter).  The pattern:
 
 - linear layer: the design ``[gamma, C, S]`` of the reference set, plus one
-  0/1 column per other set.  The amplitude of a 0/1 column is the zero point
+  0/1 column per other set (``rv_offset_columns``).  The amplitude of a 0/1 column is the zero point
   of that set minus the zero point of the reference set.  The jitter of a
   set enters the per-row error, sqrt(rv_err**2 + jitter_set**2).
 - likelihood: one ``loglike`` call per set, added.
@@ -19,6 +19,7 @@ from __future__ import annotations
 import numpy as np
 
 from orblet.design import RvOrbitBuilder, concat_columns
+from orblet.design.columns import rv_offset_columns
 from orblet.likelihood import loglike
 from orblet.model import rv_model
 from orblet.solve.rv import linear_solve_rv, recover_K
@@ -77,10 +78,7 @@ def _design(t, set_number, own_zero_points):
                                tau=TRUE_ORBIT["tau"], epoch_ref_mjd=EPOCH_REF_MJD)
     if not own_zero_points:
         return X
-    offset_columns = np.column_stack([
-        (set_number == 1).astype(float),   # 1 on the rows of set "B"
-        (set_number == 2).astype(float),   # 1 on the rows of set "C"
-    ])
+    offset_columns = rv_offset_columns(set_number)   # column 0: set "B"; column 1: set "C"
     return concat_columns([X, offset_columns])
 
 
@@ -126,3 +124,12 @@ def test_one_zero_point_for_all_sets_fits_clearly_worse():
     # two extra amplitudes; a chi2 drop of 9 is "3 sigma" for one of them
     assert one.chi2 - own.chi2 > 25.0
     assert one.chi2 / one.dof > 1.5 * own.chi2 / own.dof
+
+
+def test_offset_columns_equal_the_hand_made_columns():
+    _, _, _, set_number = _stacked()
+    by_hand = np.column_stack([
+        (set_number == 1).astype(float),   # 1 on the rows of set "B"
+        (set_number == 2).astype(float),   # 1 on the rows of set "C"
+    ])
+    assert rv_offset_columns(set_number).tobytes() == by_hand.tobytes()
