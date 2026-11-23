@@ -52,6 +52,13 @@ unchanged code first, in its own commit, and compared exactly afterwards.
 - Baselines compare with `np.array_equal`, never `allclose`; a baseline is a
   record of what the code *did*, and a tolerance hides the drift it exists to
   catch.
+- The baselines were made with a numpy built on OpenBLAS (conda-forge). A
+  numpy on another BLAS (the PyPI wheel on macOS arm64 uses Apple
+  Accelerate) rounds a matrix product differently in the last bit. Thirteen
+  cases go through such a product (the parallax factor, astropy's
+  Lomb–Scargle power); on such a build they are skipped with the reason,
+  and every other case stays strict (`tests/_blas_reference.py`). Bless a
+  baseline only on the reference build.
 - The import-closure test is the law that keeps orblet standalone. If it goes
   red, the fix is to move an import inside a function or to drop it — not to
   widen the allowed list.

@@ -22,6 +22,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from _blas_reference import (
+    SKIP_REASON,
+    PERIODOGRAM_CASES_THROUGH_BLAS,
+    blas_rounds_like_the_reference,
+)
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _periodogram_baseline import PERIODOGRAM_BASELINE  # noqa: E402
 
@@ -130,6 +136,8 @@ def computed() -> dict[str, dict]:
 
 @pytest.mark.parametrize("case", sorted(PERIODOGRAM_BASELINE))
 def test_periodogram_is_bit_identical_to_the_baseline(case, computed) -> None:
+    if case in PERIODOGRAM_CASES_THROUGH_BLAS and not blas_rounds_like_the_reference():
+        pytest.skip(SKIP_REASON)
     got = computed[case]
     expected = PERIODOGRAM_BASELINE[case]
     assert got["sha256"] == expected["sha256"], (
