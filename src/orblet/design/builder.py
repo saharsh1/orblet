@@ -55,6 +55,7 @@ import numpy as np
 from orblet.design.columns import (
     acceleration_columns,
     astrometric_columns,
+    colour_columns,
     reduced_astro_design,
     reduced_rv_design,
     rv_design_matrix,
@@ -369,6 +370,30 @@ class AccelerationBlockBuilder:
     ) -> np.ndarray:
         """Return the ``(n, 2)`` acceleration block (delegates)."""
         return acceleration_columns(t_mjd, psi, epoch_ref_mjd=epoch_ref_mjd)
+
+
+class ColourBlockBuilder:
+    """The 1-column colour block ``[d_nu_eff]`` of Gaia DR4 epoch astrometry.
+
+    Delegates to :func:`.columns.colour_columns`: the column is
+    ``COLOUR_FACTOR_AL_SIGN · colour_factor_al`` (mas·µm), and its
+    amplitude is a difference of effective wavenumbers, ν − ν_ref, in µm⁻¹.
+    The block goes AFTER every other column of a design (index 5 of the
+    single-star design, index 9 of the Thiele–Innes design), so the pinned
+    column orders do not change.  Orbit-shape-INDEPENDENT: ``build`` takes
+    only the per-row colour factor.
+    """
+
+    column_names: tuple[str, ...] = ("d_nu_eff",)
+    column_units: tuple[str, ...] = ("1/um",)
+
+    @property
+    def n_col(self) -> int:
+        return len(self.column_names)
+
+    def build(self, colour_factor_al: np.ndarray) -> np.ndarray:
+        """Return the ``(n, 1)`` colour block (delegates)."""
+        return colour_columns(colour_factor_al)
 
 
 class RelativeTiBuilder:

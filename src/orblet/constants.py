@@ -283,6 +283,27 @@ SOLAR_SYSTEM_EPHEMERIS_PIN = "builtin"
 SIMULATE_CHANNEL_ASTROMETRIC = "astrometric"
 
 
+# ── Gaia DR4 colour term of the along-scan position ────────────────────
+#: Sign of the colour term in the observation equation of the Gaia DR4
+#: ``epoch_astrometry`` table:
+#:
+#:     w_pub = model + COLOUR_FACTOR_AL_SIGN · colour_factor_al · (ν − ν_used)
+#:
+#: w_pub is the published along-scan position (mas), measured with the
+#: effective wavenumber ν_used (``nu_eff_used_in_astrometry``, µm⁻¹);
+#: ``colour_factor_al`` is the per-CCD DR4 field (mas·µm); ν is the true
+#: effective wavenumber of the source (µm⁻¹).  In words: a position
+#: corrected to the colour ν is w_pub + colour_factor_al · (ν − ν_used).
+#:
+#: The value −1 is fixed by data, not by the wording of the data model:
+#: with −1, a six-parameter fit of the public DR4 pre-release epoch
+#: astrometry reproduces the catalogue ``pseudocolour`` of its nine
+#: six-parameter sources (with +1 it does not).  A fit of synthetic data
+#: cannot find this sign: a wrong sign only flips the fitted ν − ν_used.
+#: Read in exactly one place: :func:`orblet.design.columns.colour_columns`.
+COLOUR_FACTOR_AL_SIGN = -1
+
+
 #: The names user code may rely on. UNCHANGED by the B2 merge: a merge
 #: changes where a name lives, not whether it is public. `GM_SUN_SI`,
 #: `MJD_J2017_5_TCB`, `P_UNIT_DAYS` and `require_epoch_ref_mjd` are defined
@@ -293,6 +314,7 @@ __all__ = [
     "A_CONVENTION_TOTAL_RELATIVE",
     "AU_M",
     "C_KMS",
+    "COLOUR_FACTOR_AL_SIGN",
     "DAYS_PER_KEPLER_YEAR",
     "G_SI",
     "I_DOMAIN_FULL",

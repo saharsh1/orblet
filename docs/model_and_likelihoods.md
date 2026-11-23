@@ -50,11 +50,11 @@ in three different units depending on where you look:
 | layer | unit | anchor |
 | --- | --- | --- |
 | forward models (`period_yr`) | Keplerian **years** | `rv_curve`, `model.py:197`; `kepler_xy_orbit`, `model.py:389` |
-| **RV** design matrix (`period_yr`) | Keplerian **years** | `rv_design_matrix`, `design/columns.py:158` |
+| **RV** design matrix (`period_yr`) | Keplerian **years** | `rv_design_matrix`, `design/columns.py:160` |
 | `best_linear_params_rv` | **days** | `solve/rv.py:493` |
-| **TI** design matrix, `best_linear_params_ti`, `scan_ti_frequency` | `f_per_day` = cycles per **DAY** | `solve/astrometry.py:753`, `search.py:425` |
+| **TI** design matrix, `best_linear_params_ti`, `scan_ti_frequency` | `f_per_day` = cycles per **DAY** | `solve/astrometry.py:949`, `search.py:433` |
 | the default period prior | **days** | `default_companion_priors`, `priors.py:541` |
-| the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:219`; `compose_rv_seed`, `solve/rv.py:647` |
+| the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:647` |
 
 ⚠️ **A silent factor-365.25 trap lives in this table.** The RV design matrix
 takes **years** while `best_linear_params_rv` takes **days**, and the seed
@@ -253,7 +253,7 @@ shape `(P, e, τ)`:
 v = γ·1  +  (K cos ω)·(cos ν + e)  +  (K sin ω)·(−sin ν)
 ```
 
-so the design matrix is (`rv_design_matrix`, `design/columns.py:158`,
+so the design matrix is (`rv_design_matrix`, `design/columns.py:160`,
 public as `orblet.rv_design_matrix`):
 
 ```
@@ -270,6 +270,28 @@ K = √(C² + S²)              ω = atan2(S, C) ∈ (−π, π]
 *individually* are gauge-dependent — only `K` is physical. Do not interpret
 `K cos ω` / `K sin ω` individually — decode only through `recover_K` /
 `recover_omega` (`solve/rv.py:378-406`).
+
+**Several instruments.** Each instrument (a set of RVs) has its own zero
+point and its own jitter. No function takes several sets; the pattern uses
+the atoms as they are, and `tests/test_rv_several_instruments.py` holds it
+(example: `notebooks/fitting_examples/fit_rv_several_instruments.ipynb`):
+
+- **Linear layer.** Stack the rows of all sets. The design is the three
+  columns above, plus **one 0/1 column per set other than the reference
+  set** (1 on the rows of that set), joined with `concat_columns`. `γ` is
+  then the zero point of the reference set, and the amplitude of a 0/1
+  column is the zero point of its set minus the reference's.
+  `linear_solve_rv` reads the number of columns from the design;
+  `recover_K` and `recover_omega` read columns 1 and 2 and are not affected.
+- **Jitter.** The solve takes one error per row, so the jitter of a set
+  enters as `√(rv_err² + jitter_set²)` on its rows. The linear layer holds
+  it fixed.
+- **Likelihood.** `loglike` (§2.3) takes one `offset_kms` and one
+  `jitter_kms`; the likelihood of several sets is one call per set, added.
+- ⚠️ **Refine the shape before you read the zero points.** On a coarse
+  `(P, e, τ)` grid the 0/1 columns absorb part of the shape error.
+- `best_linear_params_rv`, `compose_rv_seed` and `loglike_joint` take one
+  set only.
 
 ### 2.3 Likelihood
 
@@ -392,9 +414,9 @@ Three conventions are load-bearing here:
   (`model.py:610`).
 
 The single-star part of this equation — the last three lines — is its own
-closed-form solve, `fit_astrometric_5param` (`solve/astrometry.py:926`)
+closed-form solve, `fit_astrometric_5param` (`solve/astrometry.py:1158`)
 over the design `astrometric_5param_design_matrix`
-(`solve/astrometry.py:792`, columns 4–8 of §3.3). Its residuals are what a
+(`solve/astrometry.py:1007`, columns 4–8 of §3.3). Its residuals are what a
 period search should run on (`03_period_search.ipynb`): position, proper
 motion and parallax are a smooth secular signal that phases coherently at
 long periods and drives any periodogram to the edge of its range.
@@ -430,9 +452,9 @@ so, combined with §3.1, `w = (B X + G Y) sin ψ + (A X + F Y) cos ψ`.
 
 ### 3.3 The design matrix
 
-`ti_design_matrix`, `design/columns.py:372`, public as
+`ti_design_matrix`, `design/columns.py:374`, public as
 `orblet.ti_design_matrix`. **Nine columns**, in this fixed order
-(`_BETA_COLUMNS`, `solve/astrometry.py:109`):
+(`_BETA_COLUMNS`, `solve/astrometry.py:117`):
 
 ```
 [ A , B , F , G , Δα*₀ , Δδ₀ , μ_α* , μ_δ , ϖ ]
@@ -465,7 +487,7 @@ to a block-correlated covariance. See §7.
 
 ### 3.5 Marginal evidence and amplitude priors
 
-`linear_solve_ti`, `solve/astrometry.py:315` — algebraically identical
+`linear_solve_ti`, `solve/astrometry.py:376` — algebraically identical
 to §2.4 with nine columns (the routine is width-generic, despite docstrings
 that say "nine"). Both the proper `log_evidence` and the `logL_marginal`
 ranking score are returned, under the same three-number contract as §2.4
@@ -473,7 +495,7 @@ ranking score are returned, under the same three-number contract as §2.4
 `beta`/`cov` and `log_evidence`).
 
 **Amplitude prior.** As for RV, any object with `mean` and `cov` over the
-nine columns can be passed as `beta_prior` (`solve/astrometry.py:320`), or
+nine columns can be passed as `beta_prior` (`solve/astrometry.py:381`), or
 `None` for the flat path, which is what the linearised example runs. On a
 short baseline the parallax column is poorly conditioned against the
 orbit, and the usual cure is a Gaussian parallax prior centred on the
@@ -481,16 +503,94 @@ catalogue value, with wide Gaussians on the offsets and proper motion and
 a zero-mean Gaussian on `(A,B,F,G)` at a width you choose. Know that the
 catalogue parallax is not fully external to the data — see §7, item 4.
 
+A prior on SOME amplitudes only cannot be written as a covariance. For
+that, `beta_prior` may be a `PrecisionPrior` (`solve/astrometry.py:272`):
+a mean and a precision matrix (the inverse covariance), which may be
+singular — a zero row and column is "no prior on this amplitude". Then
+`M = XᵀΣ_d⁻¹X + P` and the right-hand side gains `P·μ`; `chi2`, `dof` and
+the data-only `logL_marginal` keep their meaning, and `log_evidence` is
+`None` (a singular precision is an improper prior). The same amplitudes
+and covariance follow from one pseudo-observation row per constrained
+amplitude (Lindegren et al. 2021, A&A 649, A2, eq. C.3), which would
+change `n`, `dof` and `chi2`.
+
+### 3.5a The colour term (Gaia DR4 epoch astrometry)
+
+The published along-scan position of a CCD observation was measured with
+an assumed effective wavenumber `ν_used` (`nu_eff_used_in_astrometry`,
+µm⁻¹, one per transit). For a source of true effective wavenumber `ν` the
+observation equation is
+
+```
+w_pub = model + s · colour_factor_al · (ν − ν_used)
+```
+
+with `colour_factor_al` the per-CCD DR4 field (mas·µm) and `s = −1`, the
+constant `COLOUR_FACTOR_AL_SIGN` (`constants.py:304`). In words: a
+position corrected to the colour `ν` is
+`w_pub + colour_factor_al · (ν − ν_used)`.
+
+⚠️ **The sign is fixed by data, not by the wording of the data model.**
+With `s = −1` a six-parameter fit of the public DR4 pre-release epoch
+astrometry reproduces the catalogue `pseudocolour` of its nine
+six-parameter sources; with `+1` it does not. No fit of synthetic data can
+find the sign: a wrong sign only flips the fitted `ν − ν_used`. The value
+holds for the main `epoch_astrometry` table; a table with the other
+convention must have its factor multiplied by −1 before it reaches orblet.
+
+The model is linear in `ν`, so the colour is one more column,
+`colour_columns` (`columns.py:462`) = `s · colour_factor_al`, wrapped by
+`ColourBlockBuilder` (`builder.py:375`). It is the only reader of the
+sign constant. The column goes AFTER the existing ones — index 5 of the
+single-star design, index 9 of the Thiele-Innes design — so no pinned
+column order changes. Its amplitude is `δν = ν − ν_ref` in µm⁻¹, with
+`ν_ref` the median of `ν_used` over the rows; the reported colour is
+`nu_eff = ν_ref + δν`, the analogue of the catalogue `pseudocolour`. If
+`ν_used` differs between transits the data are first moved to `ν_ref`.
+
+A solve takes the request as `colour=ColourTerm(...)` (`solve/colour.py:90`):
+
+| mode | what happens | design |
+|---|---|---|
+| `colour=None` | nothing; the colour inputs are not read | unchanged, byte for byte |
+| `ColourTerm("fixed", nu_eff=ν)` | data moved to the colour you give: `d − s·cf·(ν − ν_used)` | unchanged |
+| `ColourTerm("free")` | `δν` solved with the other amplitudes, flat prior | one more column |
+| `ColourTerm("free", prior_sigma=σ)` | the same, with a Gaussian prior `N(ν_ref, σ)` on the colour alone (a `PrecisionPrior`) | one more column |
+
+`fit_astrometric_5param` and `best_linear_params_ti` take all four;
+`scan_ti_frequency` and `presearch_astrometry_linear_ti` refuse the last
+one, because the ranking score is flat-prior by contract (§3.6).
+The constant
+`DPAC_COLOUR_PRIOR_SIGMA` (`solve/colour.py:57`), 0.085 µm⁻¹, is the
+prior width with which the free fit reproduces Gaia's six-parameter
+solutions; the per-source `nu_eff_error` of the DR4 epoch file is a
+different quantity and is used only on request
+(`prior_sigma="nu_eff_error"`).
+
+Assumptions, all yours to check:
+
+- **One colour per source.** The same `ν` at every epoch. A variable
+  component (an eclipse, a pulsation) changes the photocentre colour with
+  time and is not modelled.
+- **A linear shift.** The chromatic displacement of a partly resolved pair
+  is not linear in one `ν`; it is not modelled.
+- **Along-scan only**, and **nothing is clipped**: mask gross colour
+  factors before the fit.
+- **In fixed mode the colour is an input.** orblet does not derive it from
+  a colour index, a spectrum or a model.
+- **Linear solves only.** The samplers, `likelihood.py`, the joint fits
+  and the chain exports keep nine columns and take no colour term.
+
 ### 3.6 The frequency scan
 
-`scan_ti_frequency`, `search.py:425`. Scans a 3-D grid in
+`scan_ti_frequency`, `search.py:433`. Scans a 3-D grid in
 (frequency, e, τ), uniform in frequency with `Δf = 1/(oversample·T)`,
 default oversample 4. At each node it builds the design matrix and solves
 with a **flat** prior (non-flat priors are refused, for cross-frequency
 comparability). Candidates are ranked by `logL_marginal`; local maxima in
 frequency are returned.
 
-Per peak (`_alpha_mas_from_beta`, `search.py:326`):
+Per peak (`_alpha_mas_from_beta`, `search.py:334`):
 
 ```
 u = (A² + B² + F² + G²)/2        v = AG − BF
@@ -498,7 +598,7 @@ u = (A² + B² + F² + G²)/2        v = AG − BF
 ```
 
 **Peaks are flagged, not pruned** (`_prune_peak_flags`,
-`search.py:356-393`) — each carries `flagged` / `flag_reasons` for exactly
+`search.py:364-401`) — each carries `flagged` / `flag_reasons` for exactly
 two reasons: the **1-yr alias** window (`1/365.25 ± 2%` and its 6-month
 harmonic, intrinsically degenerate with the parallax column) and the
 **geometry screen** `a_phot > 0` (a vanishing amplitude or a non-positive
@@ -627,7 +727,7 @@ run    = run_emcee_chains(log_post, ..., draw_init_fn=from_seed(seed))  # 3. ref
 MJD or days-from-J2010. Convert with `resolve_epochs_mjd` (§1.2), never by
 hand, so the seed and the likelihood agree on the clock.
 
-**What the seed is** (`compose_ti_seed`, `search.py:219`). A plain dict of
+**What the seed is** (`compose_ti_seed`, `search.py:227`). A plain dict of
 named, unit-suffixed physical quantities (`P_yr`, `e`, `A_mas` …
 `plx_mas`, `pmra_masyr`, `tp_mjd`, `epoch_ref_mjd`; `astro_jitter_mas`
 optional). Print it, edit any entry, build it by hand without a scan, or
@@ -716,18 +816,18 @@ log target(θ) = log p(θ) + log Z_rv(θ) + log Z_ast(θ)
 ```
 
 Each `log Z` is the §2.4 / §3.5 closed form — `linear_solve_rv`
-(`solve/rv.py:175`) and `linear_solve_ti` (`solve/astrometry.py:315`), which
+(`solve/rv.py:175`) and `linear_solve_ti` (`solve/astrometry.py:376`), which
 return it as `logL_marginal` — evaluated on whichever design matrix the rung
 leaves linear.
 
 At **rung 1** the designs are the full ones of §2 and §3: `rv_design_matrix`
-(`design/columns.py:158`), three columns, and `ti_design_matrix`
-(`design/columns.py:372`), nine.
+(`design/columns.py:160`), three columns, and `ti_design_matrix`
+(`design/columns.py:374`), nine.
 
 At **rung 2** the orientation is sampled, so what is left linear shrinks.
-`reduced_rv_design` (`design/columns.py:216`) has two columns, because `ω`
+`reduced_rv_design` (`design/columns.py:218`) has two columns, because `ω`
 is no longer the RV solve's to choose; `reduced_astro_design`
-(`design/columns.py:246`) has six, because with `(ω, Ω, i)` fixed the four
+(`design/columns.py:248`) has six, because with `(ω, Ω, i)` fixed the four
 Thiele-Innes constants are all one scale times a known direction:
 
 ```
@@ -853,7 +953,7 @@ geometry from rung 1's median shape, with `ω` from the RV solve and
 `(Ω, i)` from the Thiele-Innes inversion; rung 3 starts from rung 2's median
 geometry with the amplitudes solved there. The composers for the single
 channels are atoms too: `compose_rv_seed` (`solve/rv.py:647`) and
-`compose_ti_seed` (`search.py:219`).
+`compose_ti_seed` (`search.py:227`).
 
 **A seed is initialisation, never a prior — also across rungs on the same
 data.** It decides where the walkers start and carries no evidence; the
@@ -1137,7 +1237,7 @@ fitted and no sampler is touched.
    so one corrupted point enters at full 1/σ² weight.
 7. **Fixed jitter at the linearised rungs** ⇒ posteriors are conditional
    on it; a mis-set value biases amplitudes, hence `K`, `a_phot` and every
-   derived mass. `reduced_chi2_band` (`search.py:393`) is the only guard;
+   derived mass. `reduced_chi2_band` (`search.py:401`) is the only guard;
    rung 3 is where jitter is sampled (§4.5).
 8. **The TI parameterisation carries no mass information beyond `fm_ast`**
    (§3.8): a TI fit alone cannot give `m₂` without an external `m₁`.
@@ -1184,19 +1284,20 @@ fixed is out of this list; the code and the tests are the record.
 | quantity | computed in | shown in |
 | --- | --- | --- |
 | RV curve | `rv_curve`, `model.py:197` | `01_forward_models_and_simulation`, `fit_rv_orbit*` |
-| RV design matrix | `rv_design_matrix`, `design/columns.py:158` | `02_design_matrices_and_linear_solves` |
+| RV design matrix | `rv_design_matrix`, `design/columns.py:160` | `02_design_matrices_and_linear_solves` |
 | RV likelihood | `loglike`, `likelihood.py:93` | `fit_rv_orbit_all_parameters` |
 | RV marginal evidence | `linear_solve_rv`, `solve/rv.py:175` | `02_design_matrices_and_linear_solves`, `fit_rv_orbit` |
 | mass function | `fm_from_K`, `model.py:63` | `04_interpretation_mass` |
 | along-scan model | `along_scan_model`, `model.py:580` | `01_forward_models_and_simulation`, `fit_astrometric_orbit` |
 | Thiele-Innes constants | `campbell_xy`, `model.py:474` (`_ti_constants_unit`, `:420`) | `fit_joint_orbit` |
-| TI design matrix | `ti_design_matrix`, `design/columns.py:372` | `02_design_matrices_and_linear_solves` |
-| single-star solve | `fit_astrometric_5param`, `solve/astrometry.py:926` | `02_design_matrices_and_linear_solves`, `03_period_search` |
+| TI design matrix | `ti_design_matrix`, `design/columns.py:374` | `02_design_matrices_and_linear_solves` |
+| colour column | `colour_columns`, `design/columns.py:462` | — |
+| single-star solve | `fit_astrometric_5param`, `solve/astrometry.py:1158` | `02_design_matrices_and_linear_solves`, `03_period_search` |
 | astro likelihood | `loglike_along_scan`, `likelihood.py:182` | `fit_joint_orbit` |
-| TI marginal evidence | `linear_solve_ti`, `solve/astrometry.py:315` | `02_design_matrices_and_linear_solves`, `fit_astrometric_orbit` |
-| reduced joint designs | `reduced_rv_design`, `design/columns.py:216`; `reduced_astro_design`, `:246` | `fit_joint_orbit` |
-| frequency scan | `scan_ti_frequency`, `search.py:425` | `03_period_search`, `fit_astrometric_orbit` |
-| seeds | `compose_ti_seed`, `search.py:219`; `compose_rv_seed`, `solve/rv.py:647` | `fit_astrometric_orbit`, `fit_rv_orbit` |
+| TI marginal evidence | `linear_solve_ti`, `solve/astrometry.py:376` | `02_design_matrices_and_linear_solves`, `fit_astrometric_orbit` |
+| reduced joint designs | `reduced_rv_design`, `design/columns.py:218`; `reduced_astro_design`, `:248` | `fit_joint_orbit` |
+| frequency scan | `scan_ti_frequency`, `search.py:433` | `03_period_search`, `fit_astrometric_orbit` |
+| seeds | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:647` | `fit_astrometric_orbit`, `fit_rv_orbit` |
 | chains | `run_emcee_chains`, `sampling.py:110`; `rhat_per_param`, `:64` | `fit_rv_orbit_all_parameters`, `fit_joint_orbit` |
 | companion mass | `solve_companion_mass`, `interpret/companion_mass.py:223` | `04_interpretation_mass` |
 | astrometric upper limit | `astrometric_upper_limit_au`, `interpret/astrometric_upper_limit.py:151` | `04_interpretation_mass` |

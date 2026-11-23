@@ -99,6 +99,14 @@ from orblet.model import (
 #
 from orblet.design.columns import astrometric_columns
 
+# The colour term of Gaia DR4 epoch astrometry: the request object and the
+# preparation of the data and the extra column (see :mod:`orblet.solve.colour`).
+from orblet.solve.colour import (
+    DPAC_COLOUR_PRIOR_SIGMA,
+    ColourTerm,
+    _prepare_colour,
+)
+
 # The old private spelling, kept so nothing outside this file has to change.
 # Same object, so ``SingleStarBlockBuilder.build IS _astrometric_columns``
 # remains literally true.
@@ -170,6 +178,14 @@ def ti_amplitude_chains(beta: "np.ndarray") -> dict:
 _NON_GAUSSIAN_BETA_PRIOR_MSG = (
     "beta_prior must be a Gaussian prior exposing 'mean' and 'cov'; "
     "non-Gaussian beta priors are not supported in the linear TI solve."
+)
+_BETA_PRIOR_COV_OR_PRECISION_MSG = (
+    "beta_prior must expose 'mean' and exactly one of 'cov' and "
+    "'precision'; it exposes both or neither."
+)
+_BETA_PRIOR_PRECISION_SHAPE_MSG = (
+    "the precision of beta_prior must be a symmetric (k, k) matrix and its "
+    "mean a (k,) vector, k the number of design columns, all finite."
 )
 _TOO_FEW_EPOCHS_MSG = (
     "linear TI solve needs at least as many epochs as linear "
@@ -250,6 +266,51 @@ from orblet.design.columns import (  # noqa: E402
 # public spellings are the documented ones.
 _ti_design_matrix = ti_design_matrix
 _acceleration_columns = acceleration_columns
+
+
+@dataclass(frozen=True, repr=False)
+class PrecisionPrior:
+    """A Gaussian prior on the linear amplitudes, given by its precision.
+
+    The precision is the inverse of the covariance.  It may be singular: a
+    zero row and column means NO prior on that amplitude.  This is how a
+    prior on ONE amplitude is written (for example on the colour amplitude
+    alone), which a covariance matrix cannot express.
+
+    With this prior :func:`linear_solve_ti` solves
+
+        M  = Xᵀ Σ_d⁻¹ X + P,      β̂ = M⁻¹ ( Xᵀ Σ_d⁻¹ d + P μ ),
+
+    with P the precision and μ the mean.  ``chi2``, ``dof = n − k`` and
+    the data-only ``logL_marginal`` keep their meaning.  ``log_evidence``
+    is ``None``: a singular precision is an improper prior and has no
+    evidence.
+
+    The same β̂ and covariance follow from one extra pseudo-observation
+    row per constrained amplitude (Lindegren et al. 2021, A&A 649, A2,
+    eq. C.3); that form changes n, ``dof`` and ``chi2``, this one does not.
+
+    Attributes
+    ----------
+    mean : np.ndarray
+        Prior mean μ of the amplitudes, shape ``(k,)``, in the units of the
+        amplitudes.  The entry of an unconstrained amplitude is not used.
+    precision : np.ndarray
+        Prior precision P, shape ``(k, k)``, symmetric, positive
+        semi-definite; units are the inverse squared units of the
+        amplitudes.
+    """
+
+    mean: np.ndarray
+    precision: np.ndarray
+
+    def __repr__(self) -> str:  # noqa: D401 - value-free by design
+        # Shapes only, never a value (same rule as the solution objects).
+        return "PrecisionPrior(mean={0}, precision={1})".format(
+            tuple(np.shape(self.mean)), tuple(np.shape(self.precision)),
+        )
+
+    __str__ = __repr__
 
 
 @dataclass(frozen=True)
@@ -388,7 +449,10 @@ def linear_solve_ti(
         ``None`` ⇒ flat prior (default).  A non-None prior MUST expose
         ``.mean`` (shape ``(9,)``) and ``.cov`` (shape ``(9, 9)``) for a
         Gaussian prior; anything else raises ``ValueError`` (value-free,
-        ``from None``).
+        ``from None``).  In place of ``.cov`` it may expose ``.precision``
+        (a :class:`PrecisionPrior`): the precision may be singular, which
+        is a prior on some amplitudes only; ``log_evidence`` is then
+        ``None``.  An object with both ``.cov`` and ``.precision`` raises.
 
     Returns
     -------
@@ -406,11 +470,20 @@ def linear_solve_ti(
         # Value-free guard: not enough epochs to constrain 9 amplitudes.
         raise ValueError(_TOO_FEW_EPOCHS_MSG)
 
+    # The prior comes in one of two forms: a covariance (.cov, the proper
+    # Gaussian prior) or a precision (.precision, may be singular).
+    prior_is_precision = False
     if beta_prior is not None:
-        # A Gaussian prior must expose .mean and .cov; anything else is
-        # unsupported.  ``from None`` severs the value-bearing chain.
-        if not (hasattr(beta_prior, "mean") and hasattr(beta_prior, "cov")):
+        has_cov = hasattr(beta_prior, "cov")
+        has_precision = hasattr(beta_prior, "precision")
+        if has_cov and has_precision:
+            raise ValueError(_BETA_PRIOR_COV_OR_PRECISION_MSG) from None
+        # A Gaussian prior must expose .mean and .cov (or .precision);
+        # anything else is unsupported.  ``from None`` severs the
+        # value-bearing chain.
+        if not hasattr(beta_prior, "mean") or not (has_cov or has_precision):
             raise ValueError(_NON_GAUSSIAN_BETA_PRIOR_MSG) from None
+        prior_is_precision = has_precision
 
     # Σ_d⁻¹ is diagonal; carry it as the per-epoch inverse variance.
     inv_var = 1.0 / sig ** 2
@@ -423,7 +496,22 @@ def linear_solve_ti(
     M_data = XtW @ Xmat
     rhs_data = XtW @ d
 
-    if beta_prior is not None:
+    if prior_is_precision:
+        # The precision is used as given: no inverse, so it may be singular
+        # (zero rows and columns: no prior on those amplitudes).
+        prior_mean = np.asarray(beta_prior.mean, dtype=float)
+        prior_prec = np.asarray(beta_prior.precision, dtype=float)
+        if (
+            prior_prec.shape != (n_col, n_col)
+            or prior_mean.shape != (n_col,)
+            or not np.all(np.isfinite(prior_prec))
+            or not np.all(np.isfinite(prior_mean))
+            or not np.array_equal(prior_prec, prior_prec.T)
+        ):
+            raise ValueError(_BETA_PRIOR_PRECISION_SHAPE_MSG) from None
+        M = M_data + prior_prec
+        rhs = rhs_data + prior_prec @ prior_mean
+    elif beta_prior is not None:
         prior_mean = np.asarray(beta_prior.mean, dtype=float)
         prior_cov = np.asarray(beta_prior.cov, dtype=float)
         # A singular / non-PD prior covariance cannot be inverted; convert
@@ -502,8 +590,10 @@ def linear_solve_ti(
     # and its Cholesky ``cho`` (matrix-determinant lemma + Woodbury).  On
     # the flat path ``log_evidence`` stays None (no proper evidence for an
     # improper prior) — that branch leaves the values above byte-identical.
+    # On the precision path it stays None too: a singular precision is an
+    # improper prior.
     log_evidence: float | None = None
-    if beta_prior is not None:
+    if beta_prior is not None and not prior_is_precision:
         # log|Σ_β| is NOT reused from M — it requires its own (cheap) 9×9
         # Cholesky of the prior covariance; that same factorisation also
         # guards positive-definiteness, so a non-PD Σ_β fails value-free
@@ -536,6 +626,80 @@ def linear_solve_ti(
         dof=int(n - n_col),
         log_evidence=log_evidence,
     )
+
+
+# ── The colour term in a linear solve ──────────────────────────────────
+_COLOUR_WITH_BETA_PRIOR_MSG = (
+    "a free colour term cannot be combined with a beta_prior: the prior "
+    "does not cover the colour amplitude.  Use ColourTerm(prior_sigma=...) "
+    "for a prior on the colour, or a fixed colour."
+)
+
+
+def _design_with_colour(X: np.ndarray, colour_setup) -> np.ndarray:
+    """Append the colour column to a design, AFTER its other columns.
+
+    Inputs
+    ------
+    X : np.ndarray
+        The design without colour, shape ``(n, k)``.
+    colour_setup : _ColourSetup or None
+        From :func:`orblet.solve.colour._prepare_colour`.
+
+    Returns
+    -------
+    np.ndarray
+        ``X`` itself when there is no free colour (no setup, or the fixed
+        mode); otherwise the ``(n, k + 1)`` design ``[X, colour column]``.
+    """
+    if colour_setup is None or colour_setup.column is None:
+        return X
+    from orblet.design.builder import concat_columns
+
+    return concat_columns([X, colour_setup.column])
+
+
+def _colour_beta_prior(n_col: int, colour_setup):
+    """The prior of a free colour fit: a Gaussian on the LAST amplitude only.
+
+    Inputs
+    ------
+    n_col : int
+        Number of design columns, the colour column (the last) included.
+    colour_setup : _ColourSetup or None
+        From :func:`orblet.solve.colour._prepare_colour`.
+
+    Returns
+    -------
+    PrecisionPrior or None
+        ``None`` when the colour is not free or its prior is flat.
+        Otherwise mean 0 (the colour ν_ref) and precision 1/σ_prior² on the
+        colour amplitude, zero precision (no prior) on every other one.
+    """
+    if colour_setup is None or colour_setup.prior_sigma is None:
+        return None
+    precision = np.zeros((n_col, n_col), dtype=float)
+    # [-1, -1]: the colour amplitude is the last column
+    precision[-1, -1] = 1.0 / colour_setup.prior_sigma ** 2
+    return PrecisionPrior(mean=np.zeros(n_col, dtype=float), precision=precision)
+
+
+def _colour_result(colour_setup, beta: np.ndarray, cov: np.ndarray):
+    """The colour fields of a result: ``(nu_eff, nu_eff_error, colour_mode)``.
+
+    No colour term: three ``None``.  Fixed: the given colour, no error.
+    Free: ν_ref plus the last amplitude (µm⁻¹), and the square root of the
+    last diagonal entry of the covariance (µm⁻¹).
+    """
+    if colour_setup is None:
+        return None, None, None
+    if colour_setup.mode == "fixed":
+        return float(colour_setup.nu_ref), None, "fixed"
+    # [-1]: the colour amplitude δν is the last column
+    nu_eff = float(colour_setup.nu_ref + beta[-1])
+    variance = float(cov[-1, -1])
+    nu_eff_error = float(np.sqrt(variance)) if variance > 0.0 else float("nan")
+    return nu_eff, nu_eff_error, "free"
 
 
 # ── Best linear TI params at a shape (+ optional correlated seed draws) ─
@@ -602,6 +766,17 @@ class TiBestLinearParams:
         covariance-correct seed for a warm-started full fit.  Mass is NOT
         among these parameters: TI measures the photocentre geometry, not
         the mass (see the reference manual, §3.8).
+    nu_eff : float or None
+        Effective wavenumber of the source, µm⁻¹.  ``None`` without a
+        colour term; the given colour in the fixed mode; ν_ref plus the
+        tenth amplitude in the free mode.
+    nu_eff_error : float or None
+        Its 1σ error, µm⁻¹ (free mode only; else ``None``).
+    colour_mode : str or None
+        ``None``, ``"fixed"`` or ``"free"``.  In the free mode ``beta`` has
+        TEN entries (the colour amplitude ``d_nu_eff = ν − ν_ref`` last, in
+        µm⁻¹), ``cov`` is ``(10, 10)``, ``dof = n − 10`` and the draws have
+        ten columns; the first nine keep their order.
     """
 
     beta: np.ndarray
@@ -611,6 +786,9 @@ class TiBestLinearParams:
     chi2: float
     dof: int
     draws: np.ndarray | None = None
+    nu_eff: float | None = None
+    nu_eff_error: float | None = None
+    colour_mode: str | None = None
 
     def __repr__(self) -> str:  # noqa: D401 - value-free by design
         # Shapes / counts ONLY — never a fitted amplitude, covariance entry,
@@ -649,6 +827,10 @@ def best_linear_params_ti(
     draw: int | None = None,
     inflate: float = 1.0,
     seed: int = 0,
+    colour: ColourTerm | None = None,
+    colour_factor_al: np.ndarray | None = None,
+    nu_eff_used: np.ndarray | None = None,
+    nu_eff_error: np.ndarray | None = None,
 ) -> TiBestLinearParams:
     """Best-fit linear Thiele-Innes amplitudes at a FIXED orbit shape
     ``(P, e, τ)`` — one closed-form GLS solve, NO MCMC.
@@ -720,6 +902,20 @@ def best_linear_params_ti(
         value in it) — harmless for a warm-start seed.
     seed : int, optional
         RNG seed for the draws.  Default 0.
+    colour : ColourTerm or None, optional
+        The colour term of Gaia DR4 epoch astrometry (see
+        :mod:`orblet.solve.colour`).  ``None`` (default): no colour term,
+        and the three colour arrays are not read.  Fixed: the data are
+        moved to the given colour first.  Free: a tenth amplitude, the
+        colour, is solved with the nine; it cannot be combined with
+        ``beta_prior``.
+    colour_factor_al, nu_eff_used : np.ndarray, optional
+        Per-row ``colour_factor_al`` (mas·µm) and
+        ``nu_eff_used_in_astrometry`` (µm⁻¹); both required with a colour
+        term.
+    nu_eff_error : np.ndarray, optional
+        Per-row ``nu_eff_error`` (µm⁻¹); read only for
+        ``ColourTerm(prior_sigma="nu_eff_error")``.
 
     Returns
     -------
@@ -757,7 +953,23 @@ def best_linear_params_ti(
     )
     sigma_eff = np.sqrt(err ** 2 + float(jitter_mas) ** 2)
 
+    # The colour term: the data moved to one colour, and (free mode) a tenth
+    # column after the nine, with its own prior on that amplitude only.
+    colour_setup = _prepare_colour(
+        colour, d, colour_factor_al, nu_eff_used, nu_eff_error,
+    )
+    if colour_setup is not None:
+        d = colour_setup.data
+        if colour_setup.column is not None:
+            if beta_prior is not None:
+                raise ValueError(_COLOUR_WITH_BETA_PRIOR_MSG)
+            X = _design_with_colour(X, colour_setup)
+            beta_prior = _colour_beta_prior(X.shape[1], colour_setup)
+
     sol = linear_solve_ti(d, sigma_eff, X, beta_prior=beta_prior)
+    nu_eff, nu_eff_sigma, colour_mode = _colour_result(
+        colour_setup, sol.beta, sol.cov,
+    )
 
     # Optional COVARIANCE-CORRECT seed draws from N(β̂, inflate · cov).  The
     # full off-diagonal cov is used (TI-coefficient ↔ nuisance correlations
@@ -778,6 +990,9 @@ def best_linear_params_ti(
         chi2=sol.chi2,
         dof=sol.dof,
         draws=draws,
+        nu_eff=nu_eff,
+        nu_eff_error=nu_eff_sigma,
+        colour_mode=colour_mode,
     )
 
 
@@ -893,6 +1108,20 @@ class Astrometric5ParamSolution:
         DESCRIPTIVE root-mean-square of the along-scan residuals (mas),
         ``sqrt(mean(residuals²))``.  Again a fit-quality summary, NOT an
         inferred excess-noise parameter.
+    nu_eff : float or None
+        Effective wavenumber of the source, µm⁻¹ (the analogue of the
+        catalogue ``pseudocolour``).  ``None`` without a colour term; the
+        given colour in the fixed mode; ν_ref plus the sixth amplitude in
+        the free mode.
+    nu_eff_error : float or None
+        Its 1σ error, µm⁻¹ (free mode only; else ``None``).
+    colour_mode : str or None
+        ``None``, ``"fixed"`` or ``"free"``.  In the free mode ``params``
+        has SIX entries (the colour amplitude ``d_nu_eff = ν − ν_ref``
+        last, in µm⁻¹) and ``cov`` is ``(6, 6)``; the first five keep their
+        order.  With a colour term, ``model`` and ``residuals`` refer to
+        the data after they were moved to one colour (the given colour in
+        the fixed mode, ν_ref in the free mode).
 
     Shapes / axes
     -------------
@@ -906,6 +1135,9 @@ class Astrometric5ParamSolution:
     residuals: np.ndarray
     chi2_per_dof: float
     rms_mas: float
+    nu_eff: float | None = None
+    nu_eff_error: float | None = None
+    colour_mode: str | None = None
 
     def __repr__(self) -> str:  # noqa: D401 - value-free by design
         # Shapes / counts ONLY — never the fitted 5-parameter amplitudes,
@@ -927,6 +1159,7 @@ def fit_astrometric_5param(
     astro_data: dict,
     *,
     epoch_ref_mjd: float | None = None,
+    colour: ColourTerm | None = None,
 ) -> Astrometric5ParamSolution:
     """Closed-form single-star (5-parameter) astrometric fit — NO MCMC.
 
@@ -968,12 +1201,25 @@ def fit_astrometric_5param(
         raises: it is the catalogue reference epoch, which tracks
         the data release (DR3 J2016.0, DR4 J2017.5), so a hardcoded default
         would bias the recovered position / proper motion on DR4 data.
+    colour : ColourTerm or None, optional
+        The colour term of Gaia DR4 epoch astrometry (see
+        :mod:`orblet.solve.colour`).  ``None`` (default): no colour term;
+        the result is the same, byte for byte, whatever colour keys
+        ``astro_data`` holds.  Otherwise ``astro_data`` must hold
+        ``colour_factor_al`` (mas·µm) and ``nu_eff_used`` (µm⁻¹), one value
+        per row, and ``nu_eff_error`` (µm⁻¹) for
+        ``prior_sigma="nu_eff_error"``.  Fixed: the data are moved to the
+        given colour, then the five parameters are solved.  Free: the
+        colour is a sixth parameter (Gaia's six-parameter solution; with
+        ``prior_sigma=DPAC_COLOUR_PRIOR_SIGMA`` it has Gaia's prior).
 
     Returns
     -------
     Astrometric5ParamSolution
         Frozen result (``params`` (5,), ``cov`` (5, 5), ``model`` (n,),
-        ``residuals`` (n,), ``chi2_per_dof``, ``rms_mas``).
+        ``residuals`` (n,), ``chi2_per_dof``, ``rms_mas``; with a free
+        colour ``params`` (6,) and ``cov`` (6, 6); the colour fields
+        ``nu_eff``, ``nu_eff_error``, ``colour_mode``).
     """
     from orblet.constants import require_epoch_ref_mjd
     from orblet.prepare import resolve_epochs_mjd
@@ -999,7 +1245,25 @@ def fit_astrometric_5param(
     # the 5-parameter beta / cov / chi2 / dof = n − 5 automatically, and
     # inherits the value-free under-determination / singular-design guards
     # (n < 5, rank-deficient design, non-positive sigma).
-    sol = linear_solve_ti(d_obs, sigma, X)
+    # The colour term: the data moved to one colour, and (free mode) a sixth
+    # column after the five, with its own prior on that amplitude only.
+    colour_setup = None
+    colour_prior = None
+    if colour is not None:
+        colour_setup = _prepare_colour(
+            colour, d_obs,
+            astro_data.get("colour_factor_al"),
+            astro_data.get("nu_eff_used"),
+            astro_data.get("nu_eff_error"),
+        )
+        d_obs = colour_setup.data
+        X = _design_with_colour(X, colour_setup)
+        colour_prior = _colour_beta_prior(X.shape[1], colour_setup)
+
+    sol = linear_solve_ti(d_obs, sigma, X, beta_prior=colour_prior)
+    nu_eff, nu_eff_sigma, colour_mode = _colour_result(
+        colour_setup, sol.beta, sol.cov,
+    )
 
     params = sol.beta
     model = X @ params
@@ -1017,4 +1281,7 @@ def fit_astrometric_5param(
         residuals=np.asarray(residuals, dtype=float),
         chi2_per_dof=chi2_per_dof,
         rms_mas=rms_mas,
+        nu_eff=nu_eff,
+        nu_eff_error=nu_eff_sigma,
+        colour_mode=colour_mode,
     )

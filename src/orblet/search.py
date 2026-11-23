@@ -83,9 +83,11 @@ from orblet.constants import DAYS_PER_KEPLER_YEAR, MJD_J2010_TCB
 from orblet.prepare import _assert_obs_time_is_j2010_days
 from orblet.solve.astrometry import (
     _SINGULAR_DESIGN_MSG,
+    _design_with_colour,
     _ti_design_matrix,
     linear_solve_ti,
 )
+from orblet.solve.colour import _prepare_colour
 
 
 # ── Static, value-free message / flag constants ──────────────────────
@@ -105,6 +107,12 @@ _SCAN_REQUIRES_FLAT_PRIOR_MSG = (
     "scan_ti_frequency requires a flat (None) beta_prior: the "
     "marginal-likelihood ranking is only comparable across frequencies "
     "for a frequency-independent prior."
+)
+
+_SCAN_COLOUR_PRIOR_MSG = (
+    "scan_ti_frequency takes a free colour only with a flat prior "
+    "(ColourTerm(mode='free') without prior_sigma): the ranking score is "
+    "flat-prior by contract."
 )
 
 # One-year (parallax) period in cycles/day, plus the fractional window
@@ -438,6 +446,9 @@ def scan_ti_frequency(
     top_k: int,
     beta_prior=None,
     return_report: bool = False,
+    colour=None,
+    colour_factor_al=None,
+    nu_eff_used=None,
 ):
     """Coarse 3-D ``(frequency, e, τ)`` linear-TI scan → ranked peaks.
 
@@ -479,6 +490,20 @@ def scan_ti_frequency(
     return_report : bool, default False
         When ``True`` return a dict ``{"peaks", "n_flagged"}`` instead of
         the bare peak list.
+    colour : ColourTerm or None, optional
+        The colour term of Gaia DR4 epoch astrometry (see
+        :mod:`orblet.solve.colour`).  ``None`` (default): no colour term.
+        Fixed: the data are moved to the given colour before the scan.
+        Free: every node solves a tenth amplitude, the colour, after the
+        nine; each peak's ``beta`` then has ten entries and its ``cov`` is
+        ``(10, 10)`` (the first nine keep their order).  A free colour
+        with a prior raises ``ValueError``: the ranking score is flat-prior
+        by contract.  Scores with and without a free colour are not
+        comparable (different numbers of amplitudes).
+    colour_factor_al, nu_eff_used : np.ndarray, optional
+        Per-row ``colour_factor_al`` (mas·µm) and
+        ``nu_eff_used_in_astrometry`` (µm⁻¹); both required with a colour
+        term.
 
     Returns
     -------
@@ -487,9 +512,17 @@ def scan_ti_frequency(
     if beta_prior is not None:
         # Cross-frequency comparability only holds for a flat prior.
         raise ValueError(_SCAN_REQUIRES_FLAT_PRIOR_MSG)
+    if colour is not None and getattr(colour, "prior_sigma", None) is not None:
+        # The same rule for the colour amplitude: flat only.
+        raise ValueError(_SCAN_COLOUR_PRIOR_MSG)
 
     t = np.asarray(t_mjd, dtype=float)
     d = np.asarray(d_obs, dtype=float)
+    # The colour term (None: nothing changes).  Fixed: the data are moved to
+    # the given colour.  Free: a tenth column joins every node's design.
+    colour_setup = _prepare_colour(colour, d, colour_factor_al, nu_eff_used, None)
+    if colour_setup is not None:
+        d = colour_setup.data
     sig = np.asarray(sigma, dtype=float)
     psi_arr = np.asarray(psi, dtype=float)
     pf = np.asarray(parallax_factor_al, dtype=float)
@@ -512,6 +545,7 @@ def scan_ti_frequency(
                     f_per_day=float(f), ecc=float(ecc), tau=float(tau),
                     epoch_ref_mjd=epoch_ref_mjd,
                 )
+                X = _design_with_colour(X, colour_setup)
                 # Near-singular guard BEFORE the solve (cheap normal matrix
                 # Cholesky-diagonal check); skip the node if it is below tol.
                 inv_var = 1.0 / sig ** 2
@@ -613,6 +647,7 @@ def presearch_astrometry_linear_ti(
     system_priors,
     epoch_ref_mjd: float,
     top_k: int,
+    colour=None,
 ) -> dict:
     """Standalone linearised-TI presearch over a loader-shaped dict.
 
@@ -651,6 +686,10 @@ def presearch_astrometry_linear_ti(
         System priors dict (accepted for call-shape parity).
     epoch_ref_mjd : float
         Reference epoch (MJD), same time scale as the fit.
+    colour : ColourTerm or None, optional
+        Forwarded to :func:`scan_ti_frequency`, with the keys
+        ``colour_factor_al`` and ``nu_eff_used`` of ``astro_data``.
+        ``None`` (default): no colour term, and the keys are not read.
 
     Returns
     -------
@@ -675,6 +714,9 @@ def presearch_astrometry_linear_ti(
         f_min_per_day=f_min_per_day, f_max_per_day=f_max_per_day,
         oversample=oversample, ecc_grid=ecc_grid, tau_grid=tau_grid,
         epoch_ref_mjd=epoch_ref_mjd, top_k=top_k, beta_prior=None,
+        colour=colour,
+        colour_factor_al=astro_data.get("colour_factor_al") if colour is not None else None,
+        nu_eff_used=astro_data.get("nu_eff_used") if colour is not None else None,
     )
 
     best = None

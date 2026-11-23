@@ -28,6 +28,7 @@ arithmetic importable by every channel without an import cycle.
 
 from orblet.design.builder import (
     AccelerationBlockBuilder,
+    ColourBlockBuilder,
     DesignBuilder,
     JointReducedAstroBuilder,
     JointReducedRvBuilder,
@@ -41,6 +42,7 @@ from orblet.design.builder import (
 
 __all__ = [
     "AccelerationBlockBuilder",
+    "ColourBlockBuilder",
     "DesignBuilder",
     "JointReducedAstroBuilder",
     "JointReducedRvBuilder",

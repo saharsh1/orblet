@@ -26,7 +26,7 @@ separate `amrf-triage` package).
 
 | name | import from | what it does | units | assumptions |
 |---|---|---|---|---|
-| `rv_model` | `orblet.model` | primary radial velocity at epochs | km/s; P in Keplerian years; masses M☉ | `mass_msun` is the PROJECTED companion mass m₂ sin i; single instrument; γ added |
+| `rv_model` | `orblet.model` | primary radial velocity at epochs | km/s; P in Keplerian years; masses M☉ | `mass_msun` is the PROJECTED companion mass m₂ sin i; one zero point γ per call (several instruments: one call per set, see the reference manual §2.2) |
 | `along_scan_model` | `orblet.model` | project (Δα*, Δδ) plus the 5-parameter model onto the scan | mas; ψ rad; PM mas/yr | consumes Gaia's bundled `parallax_factor_al`; PM linear about `epoch_ref_mjd` |
 | `thiele_innes_xy` | `orblet.model` | photocentre (Δα*, Δδ) from A, B, F, G | mas | amplitudes are photocentre amplitudes, already × parallax |
 | `campbell_xy` | `orblet.model` | photocentre (Δα*, Δδ) from Campbell elements and masses | mas; masses M☉; plx mas | **β = 0**: the primary's orbit a₁ is taken as the photocentre |
@@ -60,6 +60,9 @@ separate `amrf-triage` package).
 | `ti_amplitude_chains` | `orblet` | name the β columns as a chains dict for `ti_to_kepler` | mas | — |
 | `astrometric_5param_design_matrix`, `fit_astrometric_5param` | `orblet` | the standard no-orbit Gaia model and its closed-form fit | mas, mas/yr | no orbit, no jitter, no priors |
 | `acceleration_columns` | `orblet` | the two sky-plane acceleration columns (½ t² convention) | mas/yr² | same `epoch_ref_mjd` as the PM columns (load-bearing) |
+| `ColourTerm`, `DPAC_COLOUR_PRIOR_SIGMA` | `orblet` | the colour term of Gaia DR4 epoch astrometry, as the keyword `colour=` of `fit_astrometric_5param`, `best_linear_params_ti`, `scan_ti_frequency` and `presearch_astrometry_linear_ti`: `ColourTerm("fixed", nu_eff=ν)` moves the data to the colour ν; `ColourTerm("free")` solves the colour as one more amplitude (6 or 10 columns); `prior_sigma=` adds a Gaussian prior on it (0.085 reproduces Gaia's six-parameter solutions) | ν in µm⁻¹; `colour_factor_al` in mas·µm | one colour per source; a linear shift; along-scan only; inputs `colour_factor_al` and `nu_eff_used` per row, not clipped; the scan takes no colour prior; the samplers and joint fits take no colour term |
+| `colour_columns`, `ColourBlockBuilder`, `COLOUR_FACTOR_AL_SIGN` | `orblet` | the one colour column `s · colour_factor_al`, placed after the other columns; `s = −1` | mas·µm; amplitude in µm⁻¹ | the sign is fixed by the public DR4 pre-release data (main `epoch_astrometry` table), not by a fit of synthetic data |
+| `PrecisionPrior` | `orblet` | a Gaussian prior on the amplitudes given by its precision; a `beta_prior` of `linear_solve_ti` | inverse squared amplitude units | may be singular (a prior on some amplitudes only); `log_evidence` is then `None` |
 
 ## Period search — `03_period_search.ipynb`
 
@@ -71,6 +74,8 @@ separate `amrf-triage` package).
 | `scalar_distance_matrix`, `astrometric_segment_distance_matrix`, `scan_angle_distance_matrix` | `orblet.periodogram` | distance kernels for scalar, 1-D scan and scan-angle data | — | the scan-angle kernel treats ψ mod π; the segment one is a dissimilarity whose `L_mas` (default 0.01) must sit well below the residuals |
 | `scan_angle_coupling` | `orblet.periodogram` | scan-angle coupling D_cpl of one source, no period scan | — | input is residuals after the 5-parameter model; U-centred, can be negative |
 | `pdc_false_alarm_probability` | `orblet.periodogram` | χ² false-alarm probability of a PDC score | — | pointwise (per trial period), no look-elsewhere correction |
+| `pdc_grid_false_alarm_probability` | `orblet.periodogram` | fast false-alarm probability of the best PDC score over the grid: 1 − (1 − p)^N_eff, N_eff = T · (f_max − f_min) | periods and span in days | the χ² pointwise form (Šidák correction; astropy's "naive" rule); rows must be independent: RVs, or astrometry merged to one value per transit (conservative in both); NOT per-CCD lines that share an error within a transit |
+| `pdc_scramble_false_alarm_probability` | `orblet.periodogram` | calibrated false-alarm probability of the best PDC score over the grid: a permutation null that moves whole groups (transits), with their scan angles, to other groups' times | times and periods in days | groups exchangeable in time (no trend); each group at its mean time; smallest value 1/(1 + n_copies); seeded by `rng` |
 | `peak_fwhm_days` | `orblet.periodogram` | width of the tallest peak | days | — |
 
 ## Interpretation — `04_interpretation_mass.ipynb`

@@ -1,12 +1,13 @@
 """The design-matrix COLUMN functions — the arithmetic behind the builders.
 
-The six functions every design in orblet is assembled from:
+The seven functions every design in orblet is assembled from:
 
 ============================== ================================
 function                       what it builds
 ============================== ================================
 ``astrometric_columns``        the five single-star columns
 ``acceleration_columns``       the two sky-plane acceleration columns
+``colour_columns``             the one colour (effective-wavenumber) column
 ``ti_design_matrix``           the nine Thiele-Innes columns
 ``rv_design_matrix``           the three linear RV columns
 ``reduced_rv_design``          the reduced joint RV design
@@ -60,6 +61,7 @@ the function defined here, so both spellings are the same object.
 Conventions pinned here (documented, do NOT reorder)
 ---------------------------------------------------
 - single-star block, 5 columns: ``[ra_offset, dec_offset, pmra, pmdec, plx]``
+- colour block, 1 column: ``[d_nu_eff]``, always AFTER the other columns
 - RV design, 3 columns: ``[γ, K cos ω, K sin ω]``
 - reduced RV design, 2 columns: ``[γ, K]`` at FIXED ω
 - proper motion is linear in ``Δt_yr = (t − epoch_ref_mjd) /
@@ -75,7 +77,7 @@ import math
 
 import numpy as np
 
-from orblet.constants import DAYS_PER_KEPLER_YEAR
+from orblet.constants import COLOUR_FACTOR_AL_SIGN, DAYS_PER_KEPLER_YEAR
 from orblet.model import (
     _kepler_xy_orbit,
     _tp_from_disk_angle,
@@ -451,3 +453,47 @@ def ti_design_matrix(
     )
     return X
 
+
+_COLOUR_FACTOR_SHAPE_MSG = (
+    "colour_factor_al must be a 1-D array of finite values, one per row."
+)
+
+
+def colour_columns(colour_factor_al: np.ndarray) -> np.ndarray:
+    """Colour design block of the Gaia DR4 along-scan position, shape ``(n, 1)``.
+
+    The published along-scan position w_pub was measured with the
+    effective wavenumber ν_used.  For a source of true effective
+    wavenumber ν the observation equation is
+
+        w_pub = model + s · colour_factor_al · (ν − ν_used),
+
+    with ``s = COLOUR_FACTOR_AL_SIGN`` (see :mod:`orblet.constants` for
+    its value and how it was fixed).  The model is linear in ν, and
+
+        ∂w_pub/∂ν = s · colour_factor_al
+
+    is the one column returned here.  This function is the ONLY reader of
+    the sign constant: the free colour fit uses the column in the design,
+    and the fixed-colour correction multiplies the same column by
+    (ν − ν_used).
+
+    Inputs
+    ------
+    colour_factor_al : np.ndarray
+        The DR4 ``colour_factor_al`` of each row (one row per CCD), mas·µm,
+        shape ``(n,)``, finite.
+
+    Returns
+    -------
+    np.ndarray
+        ``(n, 1)`` float64 block ``[s · colour_factor_al]``, mas·µm.  It
+        multiplies an amplitude in µm⁻¹ (a difference of effective
+        wavenumbers) and gives mas.
+    """
+    factor = np.asarray(colour_factor_al, dtype=float)
+    if factor.ndim != 1 or not np.all(np.isfinite(factor)):
+        raise ValueError(_COLOUR_FACTOR_SHAPE_MSG)
+    block = np.empty((factor.shape[0], 1), dtype=float)
+    block[:, 0] = COLOUR_FACTOR_AL_SIGN * factor   # the one column, ∂w/∂ν
+    return block

@@ -21,7 +21,7 @@ import sys
 
 import pytest
 
-FRONT_DOOR_SIZE = 36
+FRONT_DOOR_SIZE = 42
 
 #: Must NOT be loaded by ``import orblet``: the heavy end of its own
 #: dependencies, which the lazy front door exists to keep out of import time.
