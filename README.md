@@ -12,10 +12,18 @@ supplies the pieces.
 ```python
 from orblet import ti_design_matrix, linear_solve_ti, ti_to_kepler
 
-X = ti_design_matrix(t_mjd, psi_rad, parallax_factor_al, P_days, e, tau, epoch_ref_mjd)
+X = ti_design_matrix(t_mjd, psi_rad, parallax_factor_al,
+                     f_per_day=1.0 / P_days, ecc=e, tau=tau, epoch_ref_mjd=epoch_ref_mjd)
 fit = linear_solve_ti(along_scan_mas, sigma_mas, X)
-elements = ti_to_kepler({"A": fit.beta[0], "B": fit.beta[1], "F": fit.beta[2], "G": fit.beta[3]})
+A, B, F, G = fit.beta[:4]
+elements = ti_to_kepler({"A_mas": A, "B_mas": B, "F_mas": F, "G_mas": G})
 ```
+
+The arrays and the orbit shape (`P_days`, `e`, `tau`) are yours: the solve is
+linear at a fixed shape, and the search over the shape is a separate atom.
+`fit.beta` holds nine amplitudes, `[A, B, F, G, Δα*, Δδ, μα*, μδ, ϖ]`, and
+`elements` adds `a_phot_mas`, `inc_rad`, `omega_rad` and `Omega_rad`.
+`tests/test_readme_example.py` runs this block on simulated data.
 
 ## Install
 
@@ -67,14 +75,29 @@ astropy's cache.
 | `orblet.elements` | Thiele-Innes → Campbell, NSS convention, element extraction from chains |
 | `orblet.priors` | prior classes and the log-prior composer |
 | `orblet.sampling` / `orblet.chain_stats` | emcee helpers; quantiles and circular summaries of chains |
-| `orblet.interpret` | companion mass and the astrometric mass-ratio function |
+| `orblet.interpret` | companion mass, the astrometric upper limit, the flux ratio (the astrometric mass-ratio function is a stellar model and lives in the separate `amrf-triage` package) |
 | `orblet.simulate` | a synthetic-orbit simulator and a parallax-consistent cadence, for tests and tutorials |
 | `orblet.parallax` | parallax factors from a solar-system ephemeris (Gaia at L2 by default) |
 | `orblet.plotting` | orbit, residual, sky-overlay and corner plots |
 
-The front door — `from orblet import <name>` — exposes 35 names and imports
+The front door — `from orblet import <name>` — exposes 45 names and imports
 nothing heavy: `import orblet` pulls in no scipy, no matplotlib, no astropy.
 Each name resolves on first use.
+
+## Where to read
+
+| | |
+|---|---|
+| [`docs/model_and_likelihoods.md`](https://github.com/saharsh1/orblet/blob/main/docs/model_and_likelihoods.md) | the manual: every model and likelihood, with its formula and the line of code that computes it |
+| [`docs/open_api.md`](https://github.com/saharsh1/orblet/blob/main/docs/open_api.md) | the open surface: each public name, its import path, units and assumptions |
+| [`notebooks/quickstart/`](https://github.com/saharsh1/orblet/tree/main/notebooks/quickstart) 01–04 | one capability per cell, on simulated data: forward models and simulation; design matrices and linear solves; period search; from amplitudes to a companion mass |
+| [`notebooks/fitting_examples/`](https://github.com/saharsh1/orblet/tree/main/notebooks/fitting_examples) | a whole fit built from the atoms, on simulated data: `fit_rv_orbit`, `fit_rv_orbit_all_parameters`, `fit_astrometric_orbit`, `fit_joint_orbit`, and `fit_rv_several_instruments` (new in 0.5.0: one zero point and one jitter per instrument) |
+| [`notebooks/tutorials/`](https://github.com/saharsh1/orblet/tree/main/notebooks/tutorials) 01–04 | the lesson on the public Gaia DR4 pre-release data, described [below](#tutorials-on-gaia-dr4-data) |
+| [`docs/roadmap.md`](https://github.com/saharsh1/orblet/blob/main/docs/roadmap.md) | planned work |
+
+The two series numbered 01–04 differ in their data: the quickstarts show the
+atoms one at a time on simulated data and need no download; the tutorials
+analyse real Gaia DR4 sources from start to end.
 
 ## Conventions
 
