@@ -3,8 +3,9 @@
 This module implements the load-bearing linear-algebra core of a
 marginalised SB1 radial-velocity fit.  At a FIXED non-linear shape
 ``(P, e, τ)`` the Keplerian RV model is LINEAR in three amplitudes, so
-the best-fit amplitudes and a marginal-likelihood ranking score follow
-from a single 3×3 generalised-least-squares (GLS) solve.
+the best-fit amplitudes, their χ² (the score of the shape) and a
+flat-prior marginal likelihood follow from a single 3×3
+generalised-least-squares (GLS) solve.
 
 Scheme A linearisation
 ----------------------
@@ -49,11 +50,13 @@ True anomaly is the RV-LOCAL atom
     source of truth.  It is NOT routed through the astro / Campbell
     Kepler projector.
 
-Marginal likelihood is a RANKING score
-    ``logL_marginal`` is a flat-prior marginal-likelihood RANKING score
-    for comparing candidate ``(P, e, τ)`` grid points — NOT an absolute
-    evidence.  It retains the ``log|M|`` Occam term (shape-dependent) but
-    drops the β-prior normalisation (shape-independent on the flat path).
+The score of a shape is the χ²; ``logL_marginal`` is reported
+    A shape is chosen by ``chi2`` on the flat path: the χ² at the best
+    amplitudes for that shape (the profiled χ²), smaller is better.
+    ``logL_marginal`` is the flat-prior marginal likelihood, the integral
+    over the amplitudes — NOT an absolute evidence, and NOT the score of
+    a shape: its ``log|M|`` term depends on the shape and rewards a shape
+    whose amplitudes are poorly determined.  It drops the β-prior normalisation (shape-independent on the flat path).
     The proper Gaussian-linear marginal ``log_evidence`` is populated
     ONLY under an informative Gaussian β prior; it mirrors the astro
     ``linear_marginal`` evidence form (reduced 3×3 / matrix-determinant
@@ -63,8 +66,8 @@ Marginal likelihood is a RANKING score
     computed from the DATA-ONLY normal matrix and least-squares
     amplitudes whether or not a ``beta_prior`` was passed.  The
     prior affects ``beta`` / ``cov`` (the regularised posterior) and
-    ``log_evidence`` (the proper prior-weighted integral), never the
-    ranking score.  Rules: sum the SAME score across independent channels
+    ``log_evidence`` (the proper prior-weighted integral), never
+    ``logL_marginal``.  Rules: sum the SAME score across independent channels
     at one shape (both ``logL_marginal`` or both ``log_evidence``); never
     add one kind to the other; the k-dependent constant is dropped, so
     never compare ``logL_marginal`` across models with different numbers
@@ -142,8 +145,8 @@ class RvLinearSolution:
     cov : np.ndarray
         Posterior covariance of ``beta`` (``M⁻¹``), shape ``(3, 3)``.
     logL_marginal : float or None
-        Flat-prior marginal-likelihood RANKING score (see module
-        docstring); NOT an absolute evidence.  It
+        Flat-prior marginal likelihood (see module docstring); NOT an
+        absolute evidence and NOT the score of a shape (rank by ``chi2``).  It
         means the SAME thing on every path — the likelihood integrated
         over the amplitudes under a flat prior, from the data-only
         normal matrix and the least-squares amplitudes — whether or not
@@ -187,7 +190,8 @@ def linear_solve_rv(
         β̂ = M⁻¹ ( Xᵀ Σ_d⁻¹ d_rv  [+ Σ_β⁻¹ μ_β] )
         cov = M⁻¹
 
-    and the flat-prior marginal-likelihood RANKING score, ALWAYS from the
+    and the flat-prior marginal likelihood (reported; shapes are ranked
+    by ``chi2``), ALWAYS from the
     data-only ingredients ``M_d = Xᵀ Σ_d⁻¹ X`` and the least-squares
     ``β̂_d = M_d⁻¹ Xᵀ Σ_d⁻¹ d_rv`` (the prior never enters this
     number):
@@ -262,7 +266,7 @@ def linear_solve_rv(
 
     # Data-only normal matrix M_d = Xᵀ Σ_d⁻¹ X and RHS = Xᵀ Σ_d⁻¹ d.
     # These two are the ONLY ingredients of ``logL_marginal``: the
-    # ranking score is a function of the data and the design alone, on
+    # marginal likelihood is a function of the data and the design alone, on
     # every path, whether or not a prior was passed.
     XtW = Xmat.T * inv_var  # (3, n): each column scaled by inv_var
     M_data = XtW @ Xmat
@@ -285,7 +289,7 @@ def linear_solve_rv(
         rhs = rhs_data
 
     # Cholesky factorisation: reused for the solve, the covariance, AND
-    # (on the flat path) log|M| for the ranking score.  A rank-deficient
+    # (on the flat path) log|M| for logL_marginal.  A rank-deficient
     # design makes M not positive definite → value-free error.
     try:
         cho = sla.cho_factor(M, lower=True)
@@ -304,7 +308,7 @@ def linear_solve_rv(
 
     log_det_sigma2 = float(np.sum(np.log(sig ** 2)))
 
-    # ── The flat-prior ranking score, from the DATA-ONLY ingredients ──
+    # ── The flat-prior marginal likelihood, from the DATA-ONLY ingredients ──
     # Flat path: M is M_data and beta is the least-squares solution, so
     # the score reuses them directly (no second solve).
     # Prior path: re-solve the unregularised system for the score only;
@@ -574,17 +578,19 @@ class RvBestLinearParams:
         cadence — so a covariance-correct seed MUST draw from the full
         matrix, not from independent per-parameter spreads.
     logL_marginal : float or None
-        Flat-prior marginal-likelihood RANKING score (the periodogram
-        ranking statistic across shapes), from the data-only ingredients
-        on every path; ``None`` only when a ``beta_prior`` was
+        Flat-prior marginal likelihood (the integral over the
+        amplitudes), from the data-only ingredients on every path.  Not
+        the score of a shape: it rewards poorly determined amplitudes
+        (see the module docstring); rank shapes by ``chi2``. ``None`` only when a ``beta_prior`` was
         passed and the data-only normal matrix is singular.  NOT an
         absolute evidence.
     log_evidence : float or None
         Proper Gaussian-linear marginal log-evidence (INFORMATIVE
         ``beta_prior`` only; ``None`` on the flat-prior path).
     chi2 : float
-        Weighted residual sum ``rᵀ Σ_d⁻¹ r`` at ``β̂`` (feeds the χ²/dof
-        fixed-jitter mis-set check).
+        Weighted residual sum ``rᵀ Σ_d⁻¹ r`` at ``β̂``: the profiled χ²
+        of the shape, the score to rank shapes by (smaller is better);
+        also feeds the χ²/dof fixed-jitter mis-set check.
     dof : int
         Degrees of freedom ``n − 3``.
     draws : np.ndarray or None
@@ -628,7 +634,8 @@ def best_linear_params_rv(
     conditional Gaussian.  Uses:
 
     - overlay the best-fit RV orbit at any trial period on the data;
-    - rank periods by ``logL_marginal`` (the RV periodogram statistic);
+    - rank periods by ``chi2``, the profiled χ² (not by
+      ``logL_marginal``, which rewards poorly determined amplitudes);
     - generate a COVARIANCE-CORRECT seed for a warm-started full fit
       (``draw=N`` → ``N`` correlated samples from ``N(β̂, inflate·cov)``).
 

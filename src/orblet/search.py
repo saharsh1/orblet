@@ -19,17 +19,31 @@ Storing or sharing the results is the caller's decision;
 nothing here assumes the data are public, or that they are
 not.
 
-What ``logL_marginal`` means
-----------------------------
-``logL_marginal`` is the flat-prior marginal-likelihood RANKING
-score: it ranks ``(frequency, e, τ)`` grid points relative to one another
-but is NOT an absolute Bayesian evidence.  It is MARGINAL over the nine
-linear amplitudes only; over the shape axes ``(e, τ)`` the scan takes
-the MAXIMUM per frequency (a PROFILE, not a marginal).  A profile does
-not pay for shape freedom, so on average an eccentric node scores at
-least as well as a circular one at the same frequency: the reported
-``ecc`` of a peak is biased towards the high end of ``ecc_grid`` and
-must not be read as a measurement of e (honesty note).
+The score: the profiled χ²
+--------------------------
+Each ``(frequency, e, τ)`` grid node is scored by its ``chi2``, the
+weighted residual sum ``rᵀ Σ_d⁻¹ r`` at the best linear amplitudes for
+that shape (the χ² profiled over the amplitudes).  Smaller is better: at
+each frequency the scan keeps the node with the smallest ``chi2``, finds
+the local minima in frequency, and returns them smallest first.  Every
+node has the same data and the same columns, so the ``chi2`` of two nodes
+compare directly; between two scans they compare only when the data and
+the columns are the same (a free colour adds a column).
+
+``logL_marginal`` is reported on every peak and ranks nothing.  It is
+``−½ (χ² + log det M) + const``, ``M`` the normal matrix of the
+amplitudes: the integral over the amplitudes with a flat prior.  The
+``log det M`` term rewards a shape whose amplitudes are poorly determined:
+an eccentric shape whose periastron passage holds no observation gains
+several units from it against a worse χ².  For that reason a shape is
+chosen by the χ², not by ``logL_marginal``.
+
+Over the shape axes ``(e, τ)`` the scan takes the best node per frequency
+(a PROFILE).  A profile does not pay for shape freedom, so on average an
+eccentric node scores at least as well as a circular one at the same
+frequency: the reported ``ecc`` of a peak is biased towards the high end
+of ``ecc_grid`` and must not be read as a measurement of e (honesty
+note).
 The scan has NO jitter term: the ranking is conditional on the supplied
 per-epoch ``sigma`` exactly as given, and no false-alarm probability is
 computed anywhere in this module.
@@ -104,15 +118,14 @@ _ALIAS_REGION_MSG = (
     "not solved away."
 )
 _SCAN_REQUIRES_FLAT_PRIOR_MSG = (
-    "scan_ti_frequency requires a flat (None) beta_prior: the "
-    "marginal-likelihood ranking is only comparable across frequencies "
-    "for a frequency-independent prior."
+    "scan_ti_frequency requires a flat (None) beta_prior: the scan ranks "
+    "by the chi2 at the best amplitudes, which a prior would move."
 )
 
 _SCAN_COLOUR_PRIOR_MSG = (
     "scan_ti_frequency takes a free colour only with a flat prior "
-    "(ColourTerm(mode='free') without prior_sigma): the ranking score is "
-    "flat-prior by contract."
+    "(ColourTerm(mode='free') without prior_sigma): the scan ranks by the "
+    "chi2 at the best amplitudes, which a prior would move."
 )
 
 # One-year (parallax) period in cycles/day, plus the fractional window
@@ -146,10 +159,13 @@ class TiScanPeak:
     tau : float
         Periastron-phase fraction on the unit disk (``τ ∈ [0, 1)``).
     logL_marginal : float
-        Flat-prior marginal-likelihood RANKING score (NOT an absolute
-        evidence; see module docstring).
+        Flat-prior marginal likelihood of the node (the integral over the
+        amplitudes; NOT an absolute evidence).  Reported only: it ranks
+        nothing, because it rewards poorly determined amplitudes (see the
+        module docstring).
     chi2 : float
-        Weighted residual sum at the peak (dimensionless).
+        The profiled χ² of the node: the weighted residual sum at the best
+        amplitudes (dimensionless).  The scan's score; smaller is better.
     dof : int
         Degrees of freedom ``n − 9``.
     a_phot_au : float or None
@@ -461,10 +477,11 @@ def scan_ti_frequency(
     ``_SINGULAR_DESIGN_MSG`` ValueError) OR near-singular (minimum
     Cholesky diagonal below ``_NEAR_SINGULAR_CHOL_TOL``) is SKIPPED — the
     scan never aborts.  The near-singular guard runs BEFORE the alias
-    frequencies are swept.  Nodes are ranked by ``logL_marginal``; the
-    top-``top_k`` LOCAL maxima in frequency are returned, with covariance
-    attached ONLY to those returned peaks (discarded nodes' covariances
-    are dropped — no ``(n_nodes, 9, 9)`` array is ever materialised).
+    frequencies are swept.  Nodes are ranked by ``chi2``, the profiled χ²
+    (smallest first; see the module docstring for why not
+    ``logL_marginal``): at each frequency the node with the smallest
+    ``chi2`` is kept, and the top-``top_k`` LOCAL minima in frequency are
+    returned, with covariance attached ONLY to those returned peaks.
 
     Parameters
     ----------
@@ -482,11 +499,12 @@ def scan_ti_frequency(
         Reference epoch (MJD), same time scale as ``t_mjd`` (see
         ``_ti_design_matrix``).
     top_k : int
-        Number of top-ranked local-maximum peaks to return.
+        Number of top-ranked local-minimum peaks to return.
     beta_prior : None
         MUST be ``None``; a non-None prior raises ``ValueError`` with the
-        value-free ``_SCAN_REQUIRES_FLAT_PRIOR_MSG`` (cross-frequency
-        comparability requires a frequency-independent prior).
+        value-free ``_SCAN_REQUIRES_FLAT_PRIOR_MSG``.  With a prior the
+        solve's ``chi2`` is taken at the posterior mean, not at the best
+        amplitudes, so it is not the profiled χ² the scan ranks by.
     return_report : bool, default False
         When ``True`` return a dict ``{"peaks", "n_flagged"}`` instead of
         the bare peak list.
@@ -497,9 +515,9 @@ def scan_ti_frequency(
         Free: every node solves a tenth amplitude, the colour, after the
         nine; each peak's ``beta`` then has ten entries and its ``cov`` is
         ``(10, 10)`` (the first nine keep their order).  A free colour
-        with a prior raises ``ValueError``: the ranking score is flat-prior
-        by contract.  Scores with and without a free colour are not
-        comparable (different numbers of amplitudes).
+        with a prior raises ``ValueError``, for the reason given under
+        ``beta_prior``.  The ``chi2`` of scans with and without a free
+        colour are not comparable (different numbers of amplitudes).
     colour_factor_al, nu_eff_used : np.ndarray, optional
         Per-row ``colour_factor_al`` (mas·µm) and
         ``nu_eff_used_in_astrometry`` (µm⁻¹); both required with a colour
@@ -532,9 +550,9 @@ def scan_ti_frequency(
     n_freq = int(np.floor((f_max_per_day - f_min_per_day) / delta_f)) + 1
     freqs = f_min_per_day + delta_f * np.arange(max(n_freq, 1))
 
-    # Per-frequency best node (over the e × τ sub-grid), holding only the
-    # ranking score + the LIGHT fields (no cov yet — cov is attached after
-    # the top-k prune so no (n_nodes, 9, 9) array is materialised).
+    # Per-frequency best node (over the e × τ sub-grid): the smallest
+    # profiled chi2.  Each node dict keeps the light fields and its cov;
+    # only the top_k peaks are returned with it.
     per_freq: list[dict] = []
     for f in freqs:
         best = None
@@ -561,7 +579,10 @@ def scan_ti_frequency(
                     if str(exc) == _SINGULAR_DESIGN_MSG:
                         continue
                     raise
-                if best is None or sol.logL_marginal > best["logL_marginal"]:
+                # the node of this frequency: the smallest profiled chi2
+                # (the chi2 at the best amplitudes for this shape); ties
+                # keep the first node of the grid
+                if best is None or sol.chi2 < best["chi2"]:
                     best = {
                         "f_per_day": float(f),
                         "ecc": float(ecc),
@@ -578,21 +599,22 @@ def scan_ti_frequency(
     if not per_freq:
         return {"peaks": [], "n_flagged": 0} if return_report else []
 
-    # Local maxima in frequency (a node whose score exceeds both
-    # frequency neighbours; endpoints compare to their single neighbour).
-    scores = np.array([b["logL_marginal"] for b in per_freq], dtype=float)
-    local_max_idx = []
+    # Local minima of the profiled chi2 in frequency (a node whose chi2 is
+    # at most that of both frequency neighbours; endpoints compare to
+    # their single neighbour).  i counts the frequencies that kept a node.
+    chi2_per_freq = np.array([b["chi2"] for b in per_freq], dtype=float)
+    local_min_idx = []
     for i in range(len(per_freq)):
-        left = scores[i - 1] if i > 0 else -np.inf
-        right = scores[i + 1] if i < len(per_freq) - 1 else -np.inf
-        if scores[i] >= left and scores[i] >= right:
-            local_max_idx.append(i)
-    if not local_max_idx:
-        local_max_idx = list(range(len(per_freq)))
+        left = chi2_per_freq[i - 1] if i > 0 else np.inf
+        right = chi2_per_freq[i + 1] if i < len(per_freq) - 1 else np.inf
+        if chi2_per_freq[i] <= left and chi2_per_freq[i] <= right:
+            local_min_idx.append(i)
+    if not local_min_idx:
+        local_min_idx = list(range(len(per_freq)))
 
-    # Rank the local maxima by score, take the top_k.
-    local_max_idx.sort(key=lambda i: per_freq[i]["logL_marginal"], reverse=True)
-    chosen = local_max_idx[: int(top_k)]
+    # Rank the local minima by chi2, smallest first; take the top_k.
+    local_min_idx.sort(key=lambda i: per_freq[i]["chi2"])
+    chosen = local_min_idx[: int(top_k)]
 
     peaks: list[TiScanPeak] = []
     for i in chosen:

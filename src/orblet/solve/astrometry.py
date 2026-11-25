@@ -4,9 +4,10 @@ This module implements the load-bearing linear-algebra core of a
 linearised Thiele-Innes (TI) astrometric pre-search.
 At a FIXED non-linear shape ``(frequency, e, τ)`` the
 Gaia along-scan model is linear in nine amplitudes, so the best-fit
-amplitudes and a marginal-likelihood ranking score follow from a single
-generalised-least-squares (GLS) solve.  This lets a coarse grid over the
-non-linear shape rank candidate periods cheaply before any MCMC.
+amplitudes, their χ² (the score of the shape) and a flat-prior marginal
+likelihood follow from a single generalised-least-squares (GLS) solve.
+This lets a coarse grid over the non-linear shape rank candidate periods
+by the χ² cheaply before any MCMC.
 
 Conventions (matching ``...astro.forward``)
 -------------------------------------------
@@ -53,12 +54,15 @@ Phase axis
     :func:`...astro.forward._tp_from_disk_angle`, so the linear core and
     the full engine share one source of truth.
 
-Marginal likelihood is a RANKING score
-    ``logL_marginal`` is a flat-prior marginal-likelihood RANKING score
-    for comparing candidate ``(frequency, e, τ)`` grid points — NOT an
-    absolute Bayesian evidence.  It retains the ``log|M|`` Occam term
-    (which depends on the non-linear shape, hence matters for ranking)
-    but drops the flat prior's constant and the k-dependent
+The score of a shape is the χ²; ``logL_marginal`` is reported
+    A shape is chosen by ``chi2`` on the flat path: the χ² at the best
+    amplitudes for that shape (the profiled χ²), smaller is better.
+    ``logL_marginal`` is the flat-prior marginal likelihood, the integral
+    over the amplitudes — NOT an absolute Bayesian evidence, and NOT the
+    score of a shape: its ``log|M|`` term depends on the shape and rewards
+    a shape whose amplitudes are poorly determined (an eccentric shape
+    whose periastron passage holds no observation gains several units
+    from it against a worse χ²).  It drops the flat prior's constant and the k-dependent
     ``(k/2)·log 2π`` (shape-independent).  One meaning on every path:
     it is computed from the DATA-ONLY normal matrix
     and least-squares amplitudes whether or not a ``beta_prior`` was
@@ -341,8 +345,8 @@ class LinearTiSolution:
         Posterior covariance of ``beta`` (``M⁻¹``), shape ``(9, 9)``
         (or ``(5, 5)`` for the single-star fit).
     logL_marginal : float or None
-        Flat-prior marginal-likelihood RANKING score (see module
-        docstring); NOT an absolute evidence.  It
+        Flat-prior marginal likelihood (see module docstring); NOT an
+        absolute evidence and NOT the score of a shape (rank by ``chi2``).  It
         means the SAME thing on every path — the likelihood integrated
         over the amplitudes under a flat prior, from the data-only
         normal matrix and the least-squares amplitudes — whether or not
@@ -362,7 +366,8 @@ class LinearTiSolution:
         prior.  Populated ONLY when ``beta_prior is not None``; ``None``
         on the flat (``beta_prior=None``) path, because an improper flat
         prior has no proper evidence.  Unlike ``logL_marginal`` (a
-        flat-prior RANKING score that drops the β-prior normalisation),
+        flat-prior marginal likelihood that drops the β-prior
+        normalisation),
         ``log_evidence`` retains every constant (``n·log2π``,
         ``Σ log σ²``, ``log|Σ_β|``) and is therefore directly comparable
         to a full fit's absolute log-posterior.  Defaults to ``None`` so
@@ -392,7 +397,8 @@ def linear_solve_ti(
         β̂ = M⁻¹ ( Xᵀ Σ_d⁻¹ d_obs  [+ Σ_β⁻¹ μ_β] )
         cov = M⁻¹
 
-    and the flat-prior marginal-likelihood RANKING score, ALWAYS from the
+    and the flat-prior marginal likelihood (reported; shapes are ranked
+    by ``chi2``), ALWAYS from the
     data-only ingredients ``M_d = Xᵀ Σ_d⁻¹ X`` and the least-squares
     ``β̂_d = M_d⁻¹ Xᵀ Σ_d⁻¹ d_obs`` (the prior never
     enters this number):
@@ -403,8 +409,9 @@ def linear_solve_ti(
 
     The ``log|M_d|`` term (frequency-dependent Occam factor) is RETAINED;
     the flat prior's constant and the k-dependent ``(k/2)·log 2π`` are
-    dropped (shape-independent), so ``logL_marginal`` is a ranking score
-    within one model, not an absolute evidence (see module docstring).
+    dropped (shape-independent), so ``logL_marginal`` compares shapes
+    within one model, not an absolute evidence; it is not the score of a
+    shape (see module docstring).
     On the flat path ``M = M_d`` and the arithmetic is the historical
     one, byte for byte.  On the prior path the score is ``None`` when
     ``M_d`` is singular (no flat marginal exists — nine columns on few
@@ -494,7 +501,7 @@ def linear_solve_ti(
 
     # Data-only normal matrix M_d = Xᵀ Σ_d⁻¹ X and RHS = Xᵀ Σ_d⁻¹ d.
     # These two are the ONLY ingredients of ``logL_marginal``: the
-    # ranking score is a function of the data and the design alone, on
+    # marginal likelihood is a function of the data and the design alone, on
     # every path, whether or not a prior was passed.
     XtW = Xmat.T * inv_var  # (9, n): each column scaled by inv_var
     M_data = XtW @ Xmat
@@ -533,7 +540,7 @@ def linear_solve_ti(
         rhs = rhs_data
 
     # Cholesky factorisation: reused for the solve, the covariance, AND
-    # (on the flat path) log|M| for the ranking score.  A rank-deficient
+    # (on the flat path) log|M| for logL_marginal.  A rank-deficient
     # design makes M not positive definite → value-free error.
     try:
         cho = sla.cho_factor(M, lower=True)
@@ -552,7 +559,7 @@ def linear_solve_ti(
 
     log_det_sigma2 = float(np.sum(np.log(sig ** 2)))
 
-    # ── The flat-prior ranking score, from the DATA-ONLY ingredients ──
+    # ── The flat-prior marginal likelihood, from the DATA-ONLY ingredients ──
     # Flat path: M is M_data and beta is the least-squares solution, so
     # the score reuses them directly (no second solve).
     # Prior path: re-solve the unregularised system for the score only;
@@ -751,16 +758,18 @@ class TiBestLinearParams:
         geometry — so a covariance-correct seed MUST draw from the full
         matrix, not from independent per-parameter spreads.
     logL_marginal : float or None
-        Flat-prior marginal-likelihood RANKING score (the TI-scan ranking
-        statistic across shapes), from the data-only ingredients on every
-        path; ``None`` only when a ``beta_prior`` was passed and
+        Flat-prior marginal likelihood (the integral over the
+        amplitudes), from the data-only ingredients on every path.  Not
+        the score of a shape: it rewards poorly determined amplitudes
+        (see the module docstring); rank shapes by ``chi2``. ``None`` only when a ``beta_prior`` was passed and
         the data-only normal matrix is singular.  NOT an absolute evidence.
     log_evidence : float or None
         Proper Gaussian-linear marginal log-evidence (INFORMATIVE
         ``beta_prior`` only; ``None`` on the flat-prior path).
     chi2 : float
-        Weighted residual sum ``rᵀ Σ_d⁻¹ r`` at ``β̂`` (feeds the χ²/dof
-        fixed-jitter mis-set check).
+        Weighted residual sum ``rᵀ Σ_d⁻¹ r`` at ``β̂``: the profiled χ²
+        of the shape, the score to rank shapes by (smaller is better);
+        also feeds the χ²/dof fixed-jitter mis-set check.
     dof : int
         Degrees of freedom ``n − 9``.
     draws : np.ndarray or None
@@ -848,7 +857,8 @@ def best_linear_params_ti(
     conditional Gaussian.  Uses:
 
     - overlay the best-fit photocentre orbit at any trial period;
-    - rank periods by ``logL_marginal`` (the TI-scan statistic);
+    - rank periods by ``chi2``, the profiled χ² (the TI-scan statistic;
+      not by ``logL_marginal``, which rewards poorly determined amplitudes);
     - generate a COVARIANCE-CORRECT seed for a warm-started full TI fit
       (``draw=N`` → ``N`` correlated samples from ``N(β̂, inflate·cov)``).
 

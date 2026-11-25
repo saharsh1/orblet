@@ -51,10 +51,10 @@ in three different units depending on where you look:
 | --- | --- | --- |
 | forward models (`period_yr`) | Keplerian **years** | `rv_curve`, `model.py:197`; `kepler_xy_orbit`, `model.py:389` |
 | **RV** design matrix (`period_yr`) | Keplerian **years** | `rv_design_matrix`, `design/columns.py:164` |
-| `best_linear_params_rv` | **days** | `solve/rv.py:606` |
-| **TI** design matrix, `best_linear_params_ti`, `scan_ti_frequency` | `f_per_day` = cycles per **DAY** | `solve/astrometry.py:952`, `search.py:433` |
+| `best_linear_params_rv` | **days** | `solve/rv.py:612` |
+| **TI** design matrix, `best_linear_params_ti`, `scan_ti_frequency` | `f_per_day` = cycles per **DAY** | `solve/astrometry.py:962`, `search.py:449` |
 | the default period prior | **days** | `default_companion_priors`, `priors.py:541` |
-| the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:756` |
+| the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:243`; `compose_rv_seed`, `solve/rv.py:763` |
 
 ⚠️ **A silent factor-365.25 trap lives in this table.** The RV design matrix
 takes **years** while `best_linear_params_rv` takes **days**, and the seed
@@ -87,7 +87,7 @@ this asymmetry is deliberate — do not "harmonise" it:
   residual.
 - **RV-only models:** `t_ref` is *purely* the ω gauge — shifting it rotates
   ω while leaving `K` and χ² invariant. The linear core still requires it
-  explicitly (`epoch_ref_mjd`, `solve/rv.py:38`); a convenient choice is
+  explicitly (`epoch_ref_mjd`, `solve/rv.py:39`); a convenient choice is
   the median observation epoch, and the choice must then travel with every
   result it produced.
 
@@ -260,7 +260,7 @@ public as `orblet.rv_design_matrix`):
 X = [ 1 ,  cos ν + e ,  −sin ν ]        β = (γ, C, S) = (γ, K cos ω, K sin ω)
 ```
 
-Recovery (`solve/rv.py:377`, `:399`):
+Recovery (`solve/rv.py:381`, `:399`):
 
 ```
 K = √(C² + S²)              ω = atan2(S, C) ∈ (−π, π]
@@ -269,7 +269,7 @@ K = √(C² + S²)              ω = atan2(S, C) ∈ (−π, π]
 **At e ≈ 0, ω is pure gauge** (degenerate with `T₀`), and `C`, `S`
 *individually* are gauge-dependent — only `K` is physical. Do not interpret
 `K cos ω` / `K sin ω` individually — decode only through `recover_K` /
-`recover_omega` (`solve/rv.py:378-406`).
+`recover_omega` (`solve/rv.py:382-410`).
 
 **Several instruments.** Each instrument (a set of RVs) has its own zero
 point and its own jitter. The atoms below do it, and
@@ -322,7 +322,7 @@ Returns `−inf` for `e ∉ [0,1)` or `s < 0`.
 
 ### 2.4 Marginal evidence
 
-`linear_solve_rv`, `solve/rv.py:175`. With `Σ_d = diag(σ_eff²)`,
+`linear_solve_rv`, `solve/rv.py:178`. With `Σ_d = diag(σ_eff²)`,
 prior `β ~ N(μ_β, Σ_β)`, and `M = XᵀΣ_d⁻¹X + Σ_β⁻¹`:
 
 ```
@@ -331,14 +331,19 @@ r = d − X μ_β        b = XᵀΣ_d⁻¹ r
 log Z = −½ [ (rᵀΣ_d⁻¹r − bᵀM⁻¹b) + (Σ ln σᵢ² + ln|Σ_β| + ln|M|) + n ln 2π ]
 ```
 
-`solve/rv.py:393-416`. This is `log N(d | Xμ_β, XΣ_βXᵀ + Σ_d)`
+`solve/rv.py:397-420`. This is `log N(d | Xμ_β, XΣ_βXᵀ + Σ_d)`
 with **all constants retained**, computed via the matrix-determinant lemma
 on the reduced 3×3 system, so it is comparable across models and additive
 with the astrometric evidence (§4).
 
+**The score of a shape is the χ².** A shape `(P, e, τ)` is chosen by
+`chi2`, the χ² at the best amplitudes for that shape (the χ² profiled over
+the amplitudes); smaller is better. The errors of the shape come from the
+curvature of the same χ².
+
 A second, distinct quantity is also returned: `logL_marginal`
-(`solve/rv.py:366`), a **ranking score** for comparing shapes on
-a grid:
+(`solve/rv.py:370`), the likelihood integrated over the amplitudes with a
+flat prior:
 
 ```
 logL_marginal = −½ [ χ²(β̂_d) + ln|M_d| + n ln 2π + Σ ln σᵢ² ],   M_d = XᵀΣ_d⁻¹X
@@ -355,10 +360,17 @@ and the data-only matrix is singular. Rules: sum the same score across
 independent channels at one shape; never add a `logL_marginal` to a
 `log_evidence`; never compare `logL_marginal` across models with different
 numbers of amplitudes. A sampler over the shape (rung 1, §4.1) targets
-`log_evidence`, not this score; the score is for ranking a grid.
+`log_evidence`, not this score.
+
+⚠️ **Do not choose a shape by `logL_marginal`.** Its `ln|M_d|` term depends
+on the shape and rewards a shape whose amplitudes are poorly determined. An
+eccentric shape whose periastron passage holds no observation leaves its
+amplitudes nearly degenerate, and gains several units from the term against
+a χ² that is worse by as much: a grid ranked by `logL_marginal` then runs to
+the largest eccentricity. Rank a grid of shapes by `chi2` (§3.6).
 
 **Amplitude prior.** `beta_prior` is any object exposing `mean` and `cov`
-(`solve/rv.py:232`); `None` is the flat path. The natural choice, and the
+(`solve/rv.py:236`); `None` is the flat path. The natural choice, and the
 one `02_design_matrices_and_linear_solves.ipynb` builds, is
 `μ_β = (γ_mean, 0, 0)`, diagonal with `(σ_γ², σ_cs², σ_cs²)`. Zero-mean
 isotropic on `(C,S)` ⇒ **Rayleigh prior on K** (mode at `σ_cs`, density → 0
@@ -426,9 +438,9 @@ Three conventions are load-bearing here:
   (`model.py:610`).
 
 The single-star part of this equation — the last three lines — is its own
-closed-form solve, `fit_astrometric_5param` (`solve/astrometry.py:1161`)
+closed-form solve, `fit_astrometric_5param` (`solve/astrometry.py:1171`)
 over the design `astrometric_5param_design_matrix`
-(`solve/astrometry.py:1010`, columns 4–8 of §3.3). Its residuals are what a
+(`solve/astrometry.py:1020`, columns 4–8 of §3.3). Its residuals are what a
 period search should run on (`03_period_search.ipynb`): position, proper
 motion and parallax are a smooth secular signal that phases coherently at
 long periods and drives any periodogram to the edge of its range.
@@ -466,7 +478,7 @@ so, combined with §3.1, `w = (B X + G Y) sin ψ + (A X + F Y) cos ψ`.
 
 `ti_design_matrix`, `design/columns.py:378`, public as
 `orblet.ti_design_matrix`. **Nine columns**, in this fixed order
-(`_BETA_COLUMNS`, `solve/astrometry.py:121`):
+(`_BETA_COLUMNS`, `solve/astrometry.py:125`):
 
 ```
 [ A , B , F , G , Δα*₀ , Δδ₀ , μ_α* , μ_δ , ϖ ]
@@ -499,15 +511,16 @@ to a block-correlated covariance. See §7.
 
 ### 3.5 Marginal evidence and amplitude priors
 
-`linear_solve_ti`, `solve/astrometry.py:380` — algebraically identical
+`linear_solve_ti`, `solve/astrometry.py:385` — algebraically identical
 to §2.4 with nine columns (the routine is width-generic, despite docstrings
-that say "nine"). Both the proper `log_evidence` and the `logL_marginal`
-ranking score are returned, under the same three-number contract as §2.4
-(the ranking score from the data alone on every path; the prior only in
-`beta`/`cov` and `log_evidence`).
+that say "nine"). Both the proper `log_evidence` and the flat-prior
+`logL_marginal` are returned, under the same three-number contract as §2.4
+(`logL_marginal` from the data alone on every path; the prior only in
+`beta`/`cov` and `log_evidence`). As in §2.4, a shape is chosen by `chi2`,
+not by `logL_marginal`.
 
 **Amplitude prior.** As for RV, any object with `mean` and `cov` over the
-nine columns can be passed as `beta_prior` (`solve/astrometry.py:385`), or
+nine columns can be passed as `beta_prior` (`solve/astrometry.py:390`), or
 `None` for the flat path, which is what the linearised example runs. On a
 short baseline the parallax column is poorly conditioned against the
 orbit, and the usual cure is a Gaussian parallax prior centred on the
@@ -516,7 +529,7 @@ a zero-mean Gaussian on `(A,B,F,G)` at a width you choose. Know that the
 catalogue parallax is not fully external to the data — see §7, item 4.
 
 A prior on SOME amplitudes only cannot be written as a covariance. For
-that, `beta_prior` may be a `PrecisionPrior` (`solve/astrometry.py:276`):
+that, `beta_prior` may be a `PrecisionPrior` (`solve/astrometry.py:280`):
 a mean and a precision matrix (the inverse covariance), which may be
 singular — a zero row and column is "no prior on this amplitude". Then
 `M = XᵀΣ_d⁻¹X + P` and the right-hand side gains `P·μ`; `chi2`, `dof` and
@@ -571,7 +584,8 @@ A solve takes the request as `colour=ColourTerm(...)` (`solve/colour.py:90`):
 
 `fit_astrometric_5param` and `best_linear_params_ti` take all four;
 `scan_ti_frequency` and `presearch_astrometry_linear_ti` refuse the last
-one, because the ranking score is flat-prior by contract (§3.6).
+one, because a prior moves the χ² away from the best amplitudes and the
+scan ranks by that χ² (§3.6).
 The constant
 `DPAC_COLOUR_PRIOR_SIGMA` (`solve/colour.py:57`), 0.085 µm⁻¹, is the
 prior width with which the free fit reproduces Gaia's six-parameter
@@ -595,14 +609,21 @@ Assumptions, all yours to check:
 
 ### 3.6 The frequency scan
 
-`scan_ti_frequency`, `search.py:433`. Scans a 3-D grid in
+`scan_ti_frequency`, `search.py:449`. Scans a 3-D grid in
 (frequency, e, τ), uniform in frequency with `Δf = 1/(oversample·T)`,
 default oversample 4. At each node it builds the design matrix and solves
-with a **flat** prior (non-flat priors are refused, for cross-frequency
-comparability). Candidates are ranked by `logL_marginal`; local maxima in
-frequency are returned.
+with a **flat** prior (a prior is refused: with one, the solve's χ² is not
+at the best amplitudes). Each node is scored by its `chi2`, the χ² at the
+best amplitudes for that shape: at each frequency the node with the
+smallest `chi2` is kept, the local minima in frequency are found, and they
+are returned smallest first. Every node has the same data and the same
+columns, so their `chi2` compare directly. `logL_marginal` is reported on
+every peak and ranks nothing (§2.4, the warning). Over (e, τ) the scan
+keeps the best node per frequency, a profile: on average an eccentric node
+scores at least as well as a circular one, so the `ecc` of a peak is biased
+high and is not a measurement of e.
 
-Per peak (`_alpha_mas_from_beta`, `search.py:334`):
+Per peak (`_alpha_mas_from_beta`, `search.py:350`):
 
 ```
 u = (A² + B² + F² + G²)/2        v = AG − BF
@@ -610,7 +631,7 @@ u = (A² + B² + F² + G²)/2        v = AG − BF
 ```
 
 **Peaks are flagged, not pruned** (`_prune_peak_flags`,
-`search.py:364-401`) — each carries `flagged` / `flag_reasons` for exactly
+`search.py:380-417`) — each carries `flagged` / `flag_reasons` for exactly
 two reasons: the **1-yr alias** window (`1/365.25 ± 2%` and its 6-month
 harmonic, intrinsically degenerate with the parallax column) and the
 **geometry screen** `a_phot > 0` (a vanishing amplitude or a non-positive
@@ -739,7 +760,7 @@ run    = run_emcee_chains(log_post, ..., draw_init_fn=from_seed(seed))  # 3. ref
 MJD or days-from-J2010. Convert with `resolve_epochs_mjd` (§1.2), never by
 hand, so the seed and the likelihood agree on the clock.
 
-**What the seed is** (`compose_ti_seed`, `search.py:227`). A plain dict of
+**What the seed is** (`compose_ti_seed`, `search.py:243`). A plain dict of
 named, unit-suffixed physical quantities (`P_yr`, `e`, `A_mas` …
 `plx_mas`, `pmra_masyr`, `tp_mjd`, `epoch_ref_mjd`; `astro_jitter_mas`
 optional). Print it, edit any entry, build it by hand without a scan, or
@@ -785,7 +806,7 @@ seed   = compose_rv_seed(ql, prepared, epoch_ref_mjd=EPOCH_REF)               # 
 run    = run_emcee_chains(log_post_all, ..., draw_init_fn=from_seed(seed))    # 3. refine, jitter freed  (fit_rv_orbit_all_parameters.ipynb)
 ```
 
-`compose_rv_seed` (`solve/rv.py:756`) returns `P_yr` (years — the
+`compose_rv_seed` (`solve/rv.py:763`) returns `P_yr` (years — the
 sampler's own key; the linear core and `best_linear_params_rv` take days),
 `e`, `omega_rad` (primary frame), `tau`, `K_kms`, `offset_kms`,
 `epoch_ref_mjd`; `jitter_kms` optional (no quick-look source → each chain
@@ -828,7 +849,7 @@ log target(θ) = log p(θ) + log Z_rv(θ) + log Z_ast(θ)
 ```
 
 Each `log Z` is the §2.4 / §3.5 closed form — `linear_solve_rv`
-(`solve/rv.py:175`) and `linear_solve_ti` (`solve/astrometry.py:380`), which
+(`solve/rv.py:178`) and `linear_solve_ti` (`solve/astrometry.py:385`), which
 return it as `logL_marginal` — evaluated on whichever design matrix the rung
 leaves linear.
 
@@ -964,8 +985,8 @@ fit run past that point yields an uninterpretable `D`); rung 2 refines the
 geometry from rung 1's median shape, with `ω` from the RV solve and
 `(Ω, i)` from the Thiele-Innes inversion; rung 3 starts from rung 2's median
 geometry with the amplitudes solved there. The composers for the single
-channels are atoms too: `compose_rv_seed` (`solve/rv.py:756`) and
-`compose_ti_seed` (`search.py:227`).
+channels are atoms too: `compose_rv_seed` (`solve/rv.py:763`) and
+`compose_ti_seed` (`search.py:243`).
 
 **A seed is initialisation, never a prior — also across rungs on the same
 data.** It decides where the walkers start and carries no evidence; the
@@ -1249,7 +1270,7 @@ fitted and no sampler is touched.
    so one corrupted point enters at full 1/σ² weight.
 7. **Fixed jitter at the linearised rungs** ⇒ posteriors are conditional
    on it; a mis-set value biases amplitudes, hence `K`, `a_phot` and every
-   derived mass. `reduced_chi2_band` (`search.py:401`) is the only guard;
+   derived mass. `reduced_chi2_band` (`search.py:417`) is the only guard;
    rung 3 is where jitter is sampled (§4.5).
 8. **The TI parameterisation carries no mass information beyond `fm_ast`**
    (§3.8): a TI fit alone cannot give `m₂` without an external `m₁`.
@@ -1298,18 +1319,18 @@ fixed is out of this list; the code and the tests are the record.
 | RV curve | `rv_curve`, `model.py:197` | `01_forward_models_and_simulation`, `fit_rv_orbit*` |
 | RV design matrix | `rv_design_matrix`, `design/columns.py:164` | `02_design_matrices_and_linear_solves` |
 | RV likelihood | `loglike`, `likelihood.py:93` | `fit_rv_orbit_all_parameters` |
-| RV marginal evidence | `linear_solve_rv`, `solve/rv.py:175` | `02_design_matrices_and_linear_solves`, `fit_rv_orbit` |
+| RV marginal evidence | `linear_solve_rv`, `solve/rv.py:178` | `02_design_matrices_and_linear_solves`, `fit_rv_orbit` |
 | mass function | `fm_from_K`, `model.py:63` | `04_interpretation_mass` |
 | along-scan model | `along_scan_model`, `model.py:580` | `01_forward_models_and_simulation`, `fit_astrometric_orbit` |
 | Thiele-Innes constants | `campbell_xy`, `model.py:474` (`_ti_constants_unit`, `:420`) | `fit_joint_orbit` |
 | TI design matrix | `ti_design_matrix`, `design/columns.py:378` | `02_design_matrices_and_linear_solves` |
 | colour column | `colour_columns`, `design/columns.py:466` | — |
-| single-star solve | `fit_astrometric_5param`, `solve/astrometry.py:1161` | `02_design_matrices_and_linear_solves`, `03_period_search` |
+| single-star solve | `fit_astrometric_5param`, `solve/astrometry.py:1171` | `02_design_matrices_and_linear_solves`, `03_period_search` |
 | astro likelihood | `loglike_along_scan`, `likelihood.py:182` | `fit_joint_orbit` |
-| TI marginal evidence | `linear_solve_ti`, `solve/astrometry.py:380` | `02_design_matrices_and_linear_solves`, `fit_astrometric_orbit` |
+| TI marginal evidence | `linear_solve_ti`, `solve/astrometry.py:385` | `02_design_matrices_and_linear_solves`, `fit_astrometric_orbit` |
 | reduced joint designs | `reduced_rv_design`, `design/columns.py:222`; `reduced_astro_design`, `:248` | `fit_joint_orbit` |
-| frequency scan | `scan_ti_frequency`, `search.py:433` | `03_period_search`, `fit_astrometric_orbit` |
-| seeds | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:756` | `fit_astrometric_orbit`, `fit_rv_orbit` |
+| frequency scan | `scan_ti_frequency`, `search.py:449` | `03_period_search`, `fit_astrometric_orbit` |
+| seeds | `compose_ti_seed`, `search.py:243`; `compose_rv_seed`, `solve/rv.py:763` | `fit_astrometric_orbit`, `fit_rv_orbit` |
 | chains | `run_emcee_chains`, `sampling.py:110`; `rhat_per_param`, `:64` | `fit_rv_orbit_all_parameters`, `fit_joint_orbit` |
 | companion mass | `solve_companion_mass`, `interpret/companion_mass.py:223` | `04_interpretation_mass` |
 | astrometric upper limit | `astrometric_upper_limit_au`, `interpret/astrometric_upper_limit.py:151` | `04_interpretation_mass` |

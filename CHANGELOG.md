@@ -4,6 +4,45 @@ orblet follows semantic versioning. While the version is 0.x, a change to
 the public surface (a name added, moved or removed, a convention changed) is
 a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
+## 0.5.2 — 2026-11-25
+
+A patch release: no name added, moved or removed. **The frequency scan
+ranks by a different score**, so it can return different peaks for the
+same data; no solve changes a number.
+
+**The scan ranks by the profiled χ², not by `logL_marginal`.**
+`scan_ti_frequency` (and through it `presearch_astrometry_linear_ti`) now
+keeps, at each frequency, the (e, τ) node with the smallest `chi2` (the χ²
+at the best linear amplitudes for that shape), finds the local minima in
+frequency, and returns them smallest first. Up to 0.5.1 it used
+`logL_marginal = −½ (χ² + log det M) + const`. Its `log det M` term rewards a
+shape whose amplitudes are poorly determined: for an eccentric orbit whose
+periastron passage holds no observation the scan ran to the largest
+eccentricity of the grid. On 40 synthetic sources (P = 300 d, e = 0.6, no
+observation within ±15 d of periastron) the old scan chose e = 0.95 in 36,
+the smallest χ² in 4.
+
+- Every peak still reports `logL_marginal`; it ranks nothing. The solves
+  still return it.
+- The comparison of peaks between scans (for example between frequency
+  bands) holds when the data and the columns are the same in both; a free
+  colour adds a column.
+- Docstrings of the scan and the solves, `docs/model_and_likelihoods.md`
+  (§2.4, §3.5, §3.6) and `docs/open_api.md`: a shape is chosen by `chi2`;
+  `logL_marginal` is the flat-prior marginal likelihood, with the warning.
+- The quickstart, fitting-example and tutorial notebooks choose a shape by
+  the χ² (searches and rankings); their emcee samplers still target
+  `logL_marginal`. Printed numbers move by at most 0.12 of their posterior
+  errors. Tutorial 2 (Gaia-4b): refined P 579.12 → 578.96 d, e 0.420 →
+  0.415. Tutorial 3 (Gaia BH3): refined P 4196.9 → 4193.4 d. At that fixed
+  shape the BH3 amplitudes move by up to 0.8 of their fixed-shape errors,
+  which leave out the period error (about 70 d), and they move closer to
+  ESA's least-squares solution. Tutorial 4 starts from the two new shapes.
+- `tests/test_scan_ranks_by_chi2.py`: the case above; the scan returns the
+  node of smallest χ², and the peaks come smallest χ² first.
+- A patch, not a minor release: the pins `orblet>=0.5,<0.6` stay, and an
+  installed 0.5.x returns the new ranking after an upgrade.
+
 ## 0.5.1 — 2026-11-25
 
 A patch release: no name added, moved or removed. **The drawn amplitudes
