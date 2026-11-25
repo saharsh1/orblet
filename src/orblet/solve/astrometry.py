@@ -107,6 +107,10 @@ from orblet.solve.colour import (
     _prepare_colour,
 )
 
+# The one draw of linear amplitudes in orblet (Cholesky factor of the
+# covariance), shared with the RV side so the two cannot diverge.
+from orblet.solve.rv import draw_linear_amplitudes
+
 # The old private spelling, kept so nothing outside this file has to change.
 # Same object, so ``SingleStarBlockBuilder.build IS _astrometric_columns``
 # remains literally true.
@@ -859,7 +863,7 @@ def best_linear_params_ti(
     - Jitter is held FIXED at ``jitter_mas``; the noise is
       ``σ_eff = √(centroid_pos_err² + jitter_mas²)`` (mas; matches the
       quick-look).  The returned posterior is conditional on that fixed
-      jitter; the draws assume a well-conditioned ``cov`` (a rank-deficient
+      jitter; the draws need a positive-definite ``cov`` (a rank-deficient
       design already raises value-free inside ``linear_solve_ti``).
 
     Parameters
@@ -895,11 +899,10 @@ def best_linear_params_ti(
         Covariance inflation for the draws (``≥ 1`` widens the conditional
         spread to absorb the fixed-jitter linearisation error when seeding a
         jitter-sampling full fit).  Default 1.0 (the exact conditional).  The
-        draws assume a well-conditioned ``cov``; a rank-deficient design
+        draws go through :func:`orblet.solve.rv.draw_linear_amplitudes`
+        (Cholesky factor of ``inflate · cov``); a rank-deficient design
         already raises (value-free) inside ``linear_solve_ti`` before any
-        draw, but a marginally-singular ``cov`` may surface a NumPy
-        "covariance is not positive-semidefinite" RuntimeWarning (no data
-        value in it) — harmless for a warm-start seed.
+        draw.
     seed : int, optional
         RNG seed for the draws.  Default 0.
     colour : ColourTerm or None, optional
@@ -973,13 +976,13 @@ def best_linear_params_ti(
 
     # Optional COVARIANCE-CORRECT seed draws from N(β̂, inflate · cov).  The
     # full off-diagonal cov is used (TI-coefficient ↔ nuisance correlations
-    # preserved); same multivariate_normal(β̂, cov) construction as the
-    # marginalised sampler's post-hoc conditional draw (so inflate=1 is it).
+    # preserved); the one draw of orblet, draw_linear_amplitudes (the
+    # Cholesky factor of inflate · cov, the same numbers with every
+    # linear-algebra library).
     draws = None
     if draw is not None:
-        rng = np.random.default_rng(int(seed))
-        draws = rng.multivariate_normal(
-            sol.beta, float(inflate) * sol.cov, size=int(draw),
+        draws = draw_linear_amplitudes(
+            sol, int(draw), int(seed), inflate=float(inflate),
         )
 
     return TiBestLinearParams(

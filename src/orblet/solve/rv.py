@@ -428,6 +428,9 @@ _DRAW_SOLUTION_MSG = (
 _DRAW_COUNT_MSG = "n_draws must be a positive integer."
 _DRAW_RNG_MSG = "rng must be a numpy Generator or an integer seed."
 _DRAW_INFLATE_MSG = "inflate must be a positive finite number."
+_DRAW_NOT_POSITIVE_DEFINITE_MSG = (
+    "cov must be positive definite to draw (its Cholesky factor failed)."
+)
 
 
 def draw_linear_amplitudes(
@@ -443,9 +446,16 @@ def draw_linear_amplitudes(
     Gaussian posterior N(β̂, cov), conditional on the fixed noise.  This
     returns ``n_draws`` samples of N(β̂, inflate · cov), with the FULL
     covariance (the correlations between columns are kept).  The draw is
-    ``rng.multivariate_normal(β̂, inflate · cov, size=n_draws)``; with
-    ``rng`` the integer ``seed`` it gives the same numbers as
-    ``best_linear_params_rv(..., draw=n_draws, seed=seed)``.
+    ``rng.multivariate_normal(β̂, inflate · cov, size=n_draws,
+    method="cholesky")``, which is ``β̂ + z · Lᵀ``: ``z`` the
+    ``(n_draws, k)`` standard normals of ``rng`` and ``L`` the lower
+    Cholesky factor of ``inflate · cov`` (``L · Lᵀ = inflate · cov``).
+    ``L`` is unique (lower-triangular, positive diagonal), so the draws
+    for one seed do not depend on the linear-algebra library.  A factor
+    from an SVD or an eigen-decomposition has a free sign per column, so
+    its draws do depend on the library.  With ``rng`` the integer ``seed`` it gives the same numbers as
+    ``best_linear_params_rv(..., draw=n_draws, seed=seed)`` and
+    ``best_linear_params_ti(..., draw=n_draws, seed=seed)``.
 
     It reads only ``.beta`` and ``.cov``, so it takes the result of
     :func:`linear_solve_rv` with any number of columns (zero-point columns
@@ -473,6 +483,15 @@ def draw_linear_amplitudes(
     np.ndarray
         Shape ``(n_draws, k)``, in the units of the amplitudes; row i is
         one draw, column j the amplitude of design column j.
+
+    Raises
+    ------
+    ValueError
+        A bad input (above), or a ``cov`` that is not positive definite (a
+        zero or negative variance along some direction).  The solves of
+        orblet factor the normal matrix by Cholesky and raise before that,
+        so only a covariance built by hand, or one ill-conditioned to
+        rounding, reaches this.  No input value is echoed.
     """
     # step 1, the solution: a vector beta and a square cov of its size
     if not (hasattr(solution, "beta") and hasattr(solution, "cov")):
@@ -502,10 +521,16 @@ def draw_linear_amplitudes(
     else:
         raise ValueError(_DRAW_RNG_MSG)
 
-    # step 4, the draw from N(beta, inflate · cov)
-    return generator.multivariate_normal(
-        beta, float(inflate) * cov, size=int(n_draws),
-    )
+    # step 4, the draw from N(beta, inflate · cov), through the Cholesky
+    # factor: unique, so the same numbers with every linear-algebra library
+    # (the default SVD factor has a free sign per column, and two OpenBLAS
+    # versions chose two signs)
+    try:
+        return generator.multivariate_normal(
+            beta, float(inflate) * cov, size=int(n_draws), method="cholesky",
+        )
+    except np.linalg.LinAlgError:
+        raise ValueError(_DRAW_NOT_POSITIVE_DEFINITE_MSG) from None
 
 
 # ── Best linear params at a shape (+ optional correlated seed draws) ──
@@ -642,11 +667,9 @@ def best_linear_params_rv(
         Covariance inflation for the draws (``≥ 1`` widens the conditional
         spread to absorb the fixed-jitter linearisation error when seeding a
         jitter-sampling full fit).  Default 1.0 (the exact conditional).  The
-        draws assume a well-conditioned ``cov``; a rank-deficient design
-        already raises (value-free) inside ``linear_solve_rv`` before any
-        draw, but a marginally-singular ``cov`` may surface a NumPy
-        "covariance is not positive-semidefinite" RuntimeWarning (no data
-        value in it) — harmless for a warm-start seed.
+        draws go through :func:`draw_linear_amplitudes` (Cholesky factor of
+        ``inflate · cov``); a rank-deficient design already raises
+        (value-free) inside ``linear_solve_rv`` before any draw.
     seed : int, optional
         RNG seed for the draws.  Default 0.
 
@@ -695,9 +718,8 @@ def best_linear_params_rv(
     sol = linear_solve_rv(d, sigma_eff, X, beta_prior=beta_prior)
 
     # Optional COVARIANCE-CORRECT seed draws from N(β̂, inflate · cov).  The
-    # full off-diagonal cov is used (C–S correlation preserved); drawn with
-    # the SAME multivariate_normal(β̂, cov) construction as the marginalised
-    # sampler's post-hoc conditional draw (so inflate=1 is that draw).
+    # full off-diagonal cov is used (C–S correlation preserved); drawn
+    # through draw_linear_amplitudes (the Cholesky factor of inflate · cov).
     draws = None
     if draw is not None:
         draws = draw_linear_amplitudes(

@@ -51,10 +51,10 @@ in three different units depending on where you look:
 | --- | --- | --- |
 | forward models (`period_yr`) | Keplerian **years** | `rv_curve`, `model.py:197`; `kepler_xy_orbit`, `model.py:389` |
 | **RV** design matrix (`period_yr`) | Keplerian **years** | `rv_design_matrix`, `design/columns.py:164` |
-| `best_linear_params_rv` | **days** | `solve/rv.py:581` |
-| **TI** design matrix, `best_linear_params_ti`, `scan_ti_frequency` | `f_per_day` = cycles per **DAY** | `solve/astrometry.py:949`, `search.py:433` |
+| `best_linear_params_rv` | **days** | `solve/rv.py:606` |
+| **TI** design matrix, `best_linear_params_ti`, `scan_ti_frequency` | `f_per_day` = cycles per **DAY** | `solve/astrometry.py:952`, `search.py:433` |
 | the default period prior | **days** | `default_companion_priors`, `priors.py:541` |
-| the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:734` |
+| the seed dicts (`P_yr`) | Keplerian **years** | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:756` |
 
 ⚠️ **A silent factor-365.25 trap lives in this table.** The RV design matrix
 takes **years** while `best_linear_params_rv` takes **days**, and the seed
@@ -294,8 +294,14 @@ point and its own jitter. The atoms below do it, and
   `(P, e, τ)` grid the 0/1 columns absorb part of the shape error.
 - **Draws.** `draw_linear_amplitudes(solution, n_draws, rng)` samples all
   amplitudes, zero points included, from `N(β̂, cov)` at the fixed shape and
-  jitters; `best_linear_params_rv(draw=N, seed=s)` gives the same numbers
-  through it.
+  jitters; `best_linear_params_rv(draw=N, seed=s)` and
+  `best_linear_params_ti(draw=N, seed=s)` give the same numbers through it.
+  The draw is `β̂ + z · Lᵀ`, with `z` the standard normals of the generator
+  and `L` the lower Cholesky factor of `cov` (`L · Lᵀ = cov`). `L` is unique,
+  so one seed gives the same draws with every linear-algebra library; the
+  SVD factor (numpy's default) has a free sign per column, and two OpenBLAS
+  versions gave two different draws. A `cov` that is not positive definite
+  raises.
 - `best_linear_params_rv`, `compose_rv_seed` and `loglike_joint` take one
   set only.
 
@@ -420,9 +426,9 @@ Three conventions are load-bearing here:
   (`model.py:610`).
 
 The single-star part of this equation — the last three lines — is its own
-closed-form solve, `fit_astrometric_5param` (`solve/astrometry.py:1158`)
+closed-form solve, `fit_astrometric_5param` (`solve/astrometry.py:1161`)
 over the design `astrometric_5param_design_matrix`
-(`solve/astrometry.py:1007`, columns 4–8 of §3.3). Its residuals are what a
+(`solve/astrometry.py:1010`, columns 4–8 of §3.3). Its residuals are what a
 period search should run on (`03_period_search.ipynb`): position, proper
 motion and parallax are a smooth secular signal that phases coherently at
 long periods and drives any periodogram to the edge of its range.
@@ -460,7 +466,7 @@ so, combined with §3.1, `w = (B X + G Y) sin ψ + (A X + F Y) cos ψ`.
 
 `ti_design_matrix`, `design/columns.py:378`, public as
 `orblet.ti_design_matrix`. **Nine columns**, in this fixed order
-(`_BETA_COLUMNS`, `solve/astrometry.py:117`):
+(`_BETA_COLUMNS`, `solve/astrometry.py:121`):
 
 ```
 [ A , B , F , G , Δα*₀ , Δδ₀ , μ_α* , μ_δ , ϖ ]
@@ -493,7 +499,7 @@ to a block-correlated covariance. See §7.
 
 ### 3.5 Marginal evidence and amplitude priors
 
-`linear_solve_ti`, `solve/astrometry.py:376` — algebraically identical
+`linear_solve_ti`, `solve/astrometry.py:380` — algebraically identical
 to §2.4 with nine columns (the routine is width-generic, despite docstrings
 that say "nine"). Both the proper `log_evidence` and the `logL_marginal`
 ranking score are returned, under the same three-number contract as §2.4
@@ -501,7 +507,7 @@ ranking score are returned, under the same three-number contract as §2.4
 `beta`/`cov` and `log_evidence`).
 
 **Amplitude prior.** As for RV, any object with `mean` and `cov` over the
-nine columns can be passed as `beta_prior` (`solve/astrometry.py:381`), or
+nine columns can be passed as `beta_prior` (`solve/astrometry.py:385`), or
 `None` for the flat path, which is what the linearised example runs. On a
 short baseline the parallax column is poorly conditioned against the
 orbit, and the usual cure is a Gaussian parallax prior centred on the
@@ -510,7 +516,7 @@ a zero-mean Gaussian on `(A,B,F,G)` at a width you choose. Know that the
 catalogue parallax is not fully external to the data — see §7, item 4.
 
 A prior on SOME amplitudes only cannot be written as a covariance. For
-that, `beta_prior` may be a `PrecisionPrior` (`solve/astrometry.py:272`):
+that, `beta_prior` may be a `PrecisionPrior` (`solve/astrometry.py:276`):
 a mean and a precision matrix (the inverse covariance), which may be
 singular — a zero row and column is "no prior on this amplitude". Then
 `M = XᵀΣ_d⁻¹X + P` and the right-hand side gains `P·μ`; `chi2`, `dof` and
@@ -779,7 +785,7 @@ seed   = compose_rv_seed(ql, prepared, epoch_ref_mjd=EPOCH_REF)               # 
 run    = run_emcee_chains(log_post_all, ..., draw_init_fn=from_seed(seed))    # 3. refine, jitter freed  (fit_rv_orbit_all_parameters.ipynb)
 ```
 
-`compose_rv_seed` (`solve/rv.py:734`) returns `P_yr` (years — the
+`compose_rv_seed` (`solve/rv.py:756`) returns `P_yr` (years — the
 sampler's own key; the linear core and `best_linear_params_rv` take days),
 `e`, `omega_rad` (primary frame), `tau`, `K_kms`, `offset_kms`,
 `epoch_ref_mjd`; `jitter_kms` optional (no quick-look source → each chain
@@ -822,7 +828,7 @@ log target(θ) = log p(θ) + log Z_rv(θ) + log Z_ast(θ)
 ```
 
 Each `log Z` is the §2.4 / §3.5 closed form — `linear_solve_rv`
-(`solve/rv.py:175`) and `linear_solve_ti` (`solve/astrometry.py:376`), which
+(`solve/rv.py:175`) and `linear_solve_ti` (`solve/astrometry.py:380`), which
 return it as `logL_marginal` — evaluated on whichever design matrix the rung
 leaves linear.
 
@@ -958,7 +964,7 @@ fit run past that point yields an uninterpretable `D`); rung 2 refines the
 geometry from rung 1's median shape, with `ω` from the RV solve and
 `(Ω, i)` from the Thiele-Innes inversion; rung 3 starts from rung 2's median
 geometry with the amplitudes solved there. The composers for the single
-channels are atoms too: `compose_rv_seed` (`solve/rv.py:734`) and
+channels are atoms too: `compose_rv_seed` (`solve/rv.py:756`) and
 `compose_ti_seed` (`search.py:227`).
 
 **A seed is initialisation, never a prior — also across rungs on the same
@@ -1298,12 +1304,12 @@ fixed is out of this list; the code and the tests are the record.
 | Thiele-Innes constants | `campbell_xy`, `model.py:474` (`_ti_constants_unit`, `:420`) | `fit_joint_orbit` |
 | TI design matrix | `ti_design_matrix`, `design/columns.py:378` | `02_design_matrices_and_linear_solves` |
 | colour column | `colour_columns`, `design/columns.py:466` | — |
-| single-star solve | `fit_astrometric_5param`, `solve/astrometry.py:1158` | `02_design_matrices_and_linear_solves`, `03_period_search` |
+| single-star solve | `fit_astrometric_5param`, `solve/astrometry.py:1161` | `02_design_matrices_and_linear_solves`, `03_period_search` |
 | astro likelihood | `loglike_along_scan`, `likelihood.py:182` | `fit_joint_orbit` |
-| TI marginal evidence | `linear_solve_ti`, `solve/astrometry.py:376` | `02_design_matrices_and_linear_solves`, `fit_astrometric_orbit` |
+| TI marginal evidence | `linear_solve_ti`, `solve/astrometry.py:380` | `02_design_matrices_and_linear_solves`, `fit_astrometric_orbit` |
 | reduced joint designs | `reduced_rv_design`, `design/columns.py:222`; `reduced_astro_design`, `:248` | `fit_joint_orbit` |
 | frequency scan | `scan_ti_frequency`, `search.py:433` | `03_period_search`, `fit_astrometric_orbit` |
-| seeds | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:734` | `fit_astrometric_orbit`, `fit_rv_orbit` |
+| seeds | `compose_ti_seed`, `search.py:227`; `compose_rv_seed`, `solve/rv.py:756` | `fit_astrometric_orbit`, `fit_rv_orbit` |
 | chains | `run_emcee_chains`, `sampling.py:110`; `rhat_per_param`, `:64` | `fit_rv_orbit_all_parameters`, `fit_joint_orbit` |
 | companion mass | `solve_companion_mass`, `interpret/companion_mass.py:223` | `04_interpretation_mass` |
 | astrometric upper limit | `astrometric_upper_limit_au`, `interpret/astrometric_upper_limit.py:151` | `04_interpretation_mass` |

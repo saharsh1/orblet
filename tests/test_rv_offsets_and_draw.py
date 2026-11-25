@@ -7,7 +7,9 @@ The RV zero-point columns of several instruments, and the draw of the linear amp
 - ``draw_linear_amplitudes``: samples of N(beta, inflate * cov) from a linear
   solution; the draw of ``best_linear_params_rv(draw=N)`` goes through it.
 
-With one instrument both must give the numbers of orblet 0.4.0 bit for bit.
+With one instrument the columns and the solve give the numbers of orblet 0.4.0
+bit for bit.  The draw does not: from 0.5.1 it goes through the Cholesky
+factor of the covariance, not the SVD factor (see test_linear_amplitude_draws).
 Offline and seeded; synthetic data only.  What is real: the atoms.  What is a
 stand-in: the orbit, the epochs, the errors, the noise.
 """
@@ -191,7 +193,7 @@ def _reference_rows_solution():
 
 
 @pytest.mark.parametrize("n_draws, seed, inflate", [(1, 0, 1.0), (5, 17, 1.0), (4, 3, 2.5)])
-def test_draw_equals_best_linear_params_rv_and_the_040_expression(n_draws, seed, inflate):
+def test_draw_equals_best_linear_params_rv_and_the_cholesky_expression(n_draws, seed, inflate):
     reference_rows = INSTRUMENT == 0
     best = best_linear_params_rv(
         PERIOD_DAYS, ECC, TAU, epochs_mjd=T_MJD[reference_rows], rv=RV_KMS[reference_rows],
@@ -199,12 +201,14 @@ def test_draw_equals_best_linear_params_rv_and_the_040_expression(n_draws, seed,
         draw=n_draws, inflate=inflate, seed=seed)
     solution = _reference_rows_solution()
     drawn = draw_linear_amplitudes(solution, n_draws, seed, inflate=inflate)
-    # the expression of orblet 0.4.0, written out
-    rng_040 = np.random.default_rng(seed)
-    drawn_040 = rng_040.multivariate_normal(solution.beta, inflate * solution.cov, size=n_draws)
+    # the expression of orblet 0.5.1, written out: numpy's draw through the
+    # Cholesky factor (0.4.0 and 0.5.0 used the SVD factor, method="svd")
+    rng_cholesky = np.random.default_rng(seed)
+    drawn_cholesky = rng_cholesky.multivariate_normal(
+        solution.beta, inflate * solution.cov, size=n_draws, method="cholesky")
     assert drawn.shape == (n_draws, 3)
     assert drawn.tobytes() == best.draws.tobytes()
-    assert drawn.tobytes() == drawn_040.tobytes()
+    assert drawn.tobytes() == drawn_cholesky.tobytes()
 
 
 def test_draw_with_a_generator_advances_it():

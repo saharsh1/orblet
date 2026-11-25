@@ -4,6 +4,36 @@ orblet follows semantic versioning. While the version is 0.x, a change to
 the public surface (a name added, moved or removed, a convention changed) is
 a MINOR bump; fixes and additions behind the same surface are PATCH bumps.
 
+## 0.5.1 — 2026-11-25
+
+A patch release: no name added, moved or removed. **The drawn amplitudes
+change for every seed**; no other number moves.
+
+**The draw of the linear amplitudes no longer depends on the linear-algebra
+library.** `draw_linear_amplitudes`, and through it
+`best_linear_params_rv(draw=N)` and `best_linear_params_ti(draw=N)`, now
+draw `β̂ + z · Lᵀ`: `z` the standard normals of the generator, `L` the lower
+Cholesky factor of `inflate · cov` (numpy's
+`multivariate_normal(..., method="cholesky")`). Up to 0.5.0 the draw used
+numpy's default SVD factor. Each column of that factor has a free sign, and
+two OpenBLAS builds (0.3.30 and 0.3.34) chose different signs for one 9×9
+covariance: the same seed gave two different sets of draws, both valid,
+and every error computed from them differed by up to about 1 %. The
+Cholesky factor is unique, so the same seed gives the same draws. On a
+different library (Accelerate, MKL) the factor can still differ in the last
+bit, as every other number can.
+
+- Every drawn number changes once, for every seed. A spread computed from
+  N draws moves within its sampling noise (about `1/√(2N)`, 3.5 % for 400).
+- `best_linear_params_ti` now draws through `draw_linear_amplitudes`, so the
+  astrometric and RV draws are one piece of code.
+- A `cov` that is not positive definite now raises a value-free
+  `ValueError`. The SVD draw accepted it with a `RuntimeWarning`. The solves
+  of orblet factor the normal matrix by Cholesky and raise before a draw,
+  so only a covariance built by hand reaches this.
+- `tests/test_linear_amplitude_draws.py` holds the form `β̂ + z · Lᵀ` for an
+  astrometric and an RV solution, independent of the installed library.
+
 ## 0.5.0 — 2026-11-23
 
 A minor release: names added to the public surface. No existing number
